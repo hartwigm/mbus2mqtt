@@ -106,7 +106,7 @@ pct exec "$CTID" -- sh -c '
   apk update -q && apk upgrade -q
 
   # Runtime dependencies (stay installed)
-  apk add -q nodejs npm
+  apk add -q nodejs npm nano
 
   # Build dependencies (removed after build)
   apk add -q --virtual .build-deps git python3 make g++ linux-headers
@@ -161,7 +161,7 @@ ALIASEOF
   │                                             │
   │  rc-service mbus2mqtt start|stop|status     │
   │  tail -f /var/log/mbus2mqtt.log             │
-  │  vi /etc/mbus2mqtt/config.yaml              │
+  │  nano /etc/mbus2mqtt/config.yaml             │
   │                                             │
   └─────────────────────────────────────────────┘
 MOTDEOF
