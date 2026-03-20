@@ -4,17 +4,18 @@
 # Run on the Proxmox host as root — requires NO git on the host.
 #
 # One-liner to download and run:
-#   curl -fsSL https://raw.githubusercontent.com/hartwigm/mbus2mqtt/main/deploy/create-lxc.sh | bash -s -- 200 M47
+#   curl -fsSL https://raw.githubusercontent.com/hartwigm/mbus2mqtt/main/deploy/create-lxc.sh | bash -s -- 200 M47 vmbr0
 #
-# Usage: bash create-lxc.sh [CTID] [PROPERTY_NAME]
+# Usage: bash create-lxc.sh [CTID] [PROPERTY_NAME] [BRIDGE]
+# Example: bash create-lxc.sh 200 M47 vmbr1
 #
 set -e
 
 CTID="${1:-200}"
 PROPERTY="${2:-M47}"
+BRIDGE="${3:-vmbr0}"
 HOSTNAME="mbus2mqtt-${PROPERTY,,}"
 STORAGE="${STORAGE:-local-lvm}"
-BRIDGE="${BRIDGE:-vmbr0}"
 MEMORY=256
 SWAP=128
 DISK=2
@@ -28,6 +29,7 @@ NC='\033[0m'
 echo -e "${GREEN}=== mbus2mqtt LXC installer (Alpine) ===${NC}"
 echo "  CTID:     $CTID"
 echo "  Property: $PROPERTY"
+echo "  Bridge:   $BRIDGE"
 echo ""
 
 # Verify we're on Proxmox
