@@ -1,4 +1,4 @@
-import { Config, MeterReading } from '../types';
+import { Config, DeviceConfig, MeterReading } from '../types';
 import { PortManager } from '../mbus/port-manager';
 import { MqttPublisher } from '../mqtt/client';
 import { ReadingsStore } from '../store/readings-store';
@@ -7,6 +7,8 @@ import { haStateTopic, houseAiTopic } from '../mqtt/topics';
 import { shouldPublishHA, shouldPublishHouseAiHourly, isDailyWindow } from './strategies';
 import { getLogger } from '../util/logger';
 
+const TICK_MS = 60 * 1000; // check every minute
+
 export class Scheduler {
   private config: Config;
   private portManager: PortManager;
@@ -14,6 +16,7 @@ export class Scheduler {
   private store: ReadingsStore;
   private timer: NodeJS.Timeout | null = null;
   private running = false;
+  private reading = false;
 
   constructor(config: Config, portManager: PortManager, mqttClient: MqttPublisher, store: ReadingsStore) {
     this.config = config;
@@ -31,91 +34,110 @@ export class Scheduler {
     }
   }
 
-  async readAndPublish(): Promise<void> {
+  private getDeviceInterval(device: DeviceConfig): number {
+    return (device.read_interval_minutes || this.config.read_interval_minutes) * 60 * 1000;
+  }
+
+  private getDevicesDue(): DeviceConfig[] {
+    const now = Date.now();
+    return this.config.devices.filter(dev => {
+      const state = this.store.get(dev.secondary_address);
+      if (!state.last_read) return true;
+      const elapsed = now - new Date(state.last_read).getTime();
+      return elapsed >= this.getDeviceInterval(dev);
+    });
+  }
+
+  async tick(): Promise<void> {
+    if (this.reading) return; // skip if previous cycle still running
     const log = getLogger();
-    log.info('Starting read cycle...');
 
-    const readings = await this.portManager.readAllDevices();
-    const now = new Date().toISOString();
+    const due = this.getDevicesDue();
+    if (due.length === 0) return;
 
-    for (const reading of readings) {
-      const state = this.store.get(reading.device_id);
-      const valueChanged = this.store.hasValueChanged(reading.device_id, reading.value);
+    this.reading = true;
+    try {
+      log.info(`Reading ${due.length} device(s)...`);
+      const readings = await this.portManager.readDevices(due);
+      const now = new Date().toISOString();
 
-      // Update store with new reading
-      this.store.update(reading.device_id, {
-        last_value: reading.value,
-        last_unit: reading.unit,
-        last_read: now,
-        read_errors: 0,
-      });
+      for (const reading of readings) {
+        const state = this.store.get(reading.device_id);
+        const valueChanged = this.store.hasValueChanged(reading.device_id, reading.value);
 
-      const payload = {
-        value: reading.value,
-        unit: reading.unit,
-        medium: reading.medium,
-        name: reading.name,
-        timestamp: now,
-      };
+        this.store.update(reading.device_id, {
+          last_value: reading.value,
+          last_unit: reading.unit,
+          last_read: now,
+          read_errors: 0,
+        });
 
-      // HA publishing: daily + on change
-      if (shouldPublishHA(state, valueChanged)) {
-        const topic = haStateTopic(this.config.property, reading.device_id);
-        await this.mqttClient.publish(topic, payload, true);
-        this.store.update(reading.device_id, { last_ha_publish: now });
-        log.debug(`Published to HA: ${reading.name} = ${reading.value} ${reading.unit}`);
+        // HA payload (full)
+        const payload = {
+          value: reading.value,
+          unit: reading.unit,
+          medium: reading.medium,
+          name: reading.name,
+          timestamp: now,
+        };
+
+        if (shouldPublishHA(state, valueChanged)) {
+          const topic = haStateTopic(this.config.property, reading.device_id);
+          await this.mqttClient.publish(topic, payload, true);
+          this.store.update(reading.device_id, { last_ha_publish: now });
+          log.debug(`HA: ${reading.name} = ${reading.value} ${reading.unit}`);
+        }
+
+        // house.ai payload (value + timestamp only)
+        const houseAiPayload = { value: reading.value, timestamp: now };
+
+        if (shouldPublishHouseAiHourly(state)) {
+          const topic = houseAiTopic(this.config.property, reading.device_id);
+          await this.mqttClient.publish(topic, houseAiPayload);
+          this.store.update(reading.device_id, { last_houseai_hourly: now });
+          log.debug(`house.ai (hourly): ${reading.name}`);
+        }
+
+        if (isDailyWindow() && !state.last_houseai_daily?.startsWith(now.slice(0, 10))) {
+          const topic = houseAiTopic(this.config.property, reading.device_id);
+          await this.mqttClient.publish(topic, houseAiPayload);
+          this.store.update(reading.device_id, { last_houseai_daily: now });
+          log.info(`house.ai (daily): ${reading.name} = ${reading.value} ${reading.unit}`);
+        }
       }
 
-      // house.ai payload: only value + timestamp (as expected by mqtt_service.py)
-      const houseAiPayload = {
-        value: reading.value,
-        timestamp: now,
-      };
-
-      // house.ai publishing: hourly
-      if (shouldPublishHouseAiHourly(state)) {
-        const topic = houseAiTopic(this.config.property, reading.device_id);
-        await this.mqttClient.publish(topic, houseAiPayload);
-        this.store.update(reading.device_id, { last_houseai_hourly: now });
-        log.debug(`Published to house.ai (hourly): ${reading.name}`);
+      // Track errors for devices that were due but not read
+      for (const dev of due) {
+        if (!readings.find(r => r.device_id === dev.secondary_address)) {
+          const state = this.store.get(dev.secondary_address);
+          this.store.update(dev.secondary_address, { read_errors: state.read_errors + 1 });
+        }
       }
 
-      // house.ai publishing: daily at 23:59
-      if (isDailyWindow() && !state.last_houseai_daily?.startsWith(now.slice(0, 10))) {
-        const topic = houseAiTopic(this.config.property, reading.device_id);
-        await this.mqttClient.publish(topic, houseAiPayload);
-        this.store.update(reading.device_id, { last_houseai_daily: now });
-        log.info(`Published daily snapshot to house.ai: ${reading.name} = ${reading.value} ${reading.unit}`);
-      }
+      this.store.save();
+      log.info(`Done: ${readings.length}/${due.length} OK`);
+    } finally {
+      this.reading = false;
     }
-
-    // Track errors for devices that were not read
-    for (const device of this.config.devices) {
-      if (!readings.find(r => r.device_id === device.secondary_address)) {
-        const state = this.store.get(device.secondary_address);
-        this.store.update(device.secondary_address, { read_errors: state.read_errors + 1 });
-      }
-    }
-
-    this.store.save();
-    log.info(`Read cycle complete: ${readings.length}/${this.config.devices.length} devices OK`);
   }
 
   start(): void {
     const log = getLogger();
     this.running = true;
-    const intervalMs = this.config.read_interval_minutes * 60 * 1000;
 
-    log.info(`Scheduler started: reading every ${this.config.read_interval_minutes} min`);
+    const intervals = this.config.devices.map(d =>
+      `${d.name}: ${d.read_interval_minutes || this.config.read_interval_minutes}min`
+    );
+    log.info(`Scheduler started. Intervals: ${intervals.join(', ')}`);
 
     // Initial read
-    this.readAndPublish().catch(err => log.error(`Read cycle error: ${err}`));
+    this.tick().catch(err => log.error(`Tick error: ${err}`));
 
     this.timer = setInterval(() => {
       if (this.running) {
-        this.readAndPublish().catch(err => log.error(`Read cycle error: ${err}`));
+        this.tick().catch(err => log.error(`Tick error: ${err}`));
       }
-    }, intervalMs);
+    }, TICK_MS);
   }
 
   stop(): void {

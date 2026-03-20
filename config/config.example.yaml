@@ -9,7 +9,7 @@ mqtt:
   password: "changeme"
   client_id: "mbus2mqtt-M47"
 
-# Read interval in minutes
+# Default read interval in minutes (can be overridden per device)
 read_interval_minutes: 15
 
 # Serial ports with M-Bus adapters
@@ -58,11 +58,12 @@ devices:
     name: "WZ 24104851"
     medium: "water"
 
-  # USB1 - Wärmezähler
+  # USB1 - Wärmezähler (read_interval_minutes overrides global default)
   - secondary_address: "21000094523B0504"
     port: "usb1"
     name: "Wärmemengenzähler"
     medium: "heat"
+    read_interval_minutes: 5
 
 logging:
   level: "info"

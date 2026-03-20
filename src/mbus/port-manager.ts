@@ -31,12 +31,13 @@ export class PortManager {
     this.connections.clear();
   }
 
-  async readAllDevices(): Promise<MeterReading[]> {
+  async readDevices(devices?: DeviceConfig[]): Promise<MeterReading[]> {
     const log = getLogger();
+    const toRead = devices || this.config.devices;
 
     // Group devices by port
     const byPort = new Map<string, DeviceConfig[]>();
-    for (const dev of this.config.devices) {
+    for (const dev of toRead) {
       const list = byPort.get(dev.port) || [];
       list.push(dev);
       byPort.set(dev.port, list);

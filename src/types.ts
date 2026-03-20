@@ -9,6 +9,7 @@ export interface DeviceConfig {
   port: string;
   name: string;
   medium: 'water' | 'warm_water' | 'heat' | 'gas' | 'electricity';
+  read_interval_minutes?: number;
 }
 
 export interface MqttConfig {
