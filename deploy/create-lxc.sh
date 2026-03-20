@@ -143,6 +143,29 @@ INITEOF
   chmod +x /etc/init.d/mbus2mqtt
   rc-update add mbus2mqtt default
 
+  # CLI alias so "mbus2mqtt" works directly
+  cat > /etc/profile.d/mbus2mqtt.sh << '\''ALIASEOF'\''
+alias mbus2mqtt="node /opt/mbus2mqtt/dist/index.js -c /etc/mbus2mqtt/config.yaml"
+ALIASEOF
+
+  # Login banner
+  cat > /etc/motd << '\''MOTDEOF'\''
+  ┌─────────────────────────────────────────────┐
+  │  mbus2mqtt - M-Bus to MQTT Gateway          │
+  ├─────────────────────────────────────────────┤
+  │                                             │
+  │  mbus2mqtt scan      Scan ports for meters  │
+  │  mbus2mqtt list      Show meters & values   │
+  │  mbus2mqtt read <id> Read single meter      │
+  │  mbus2mqtt run       Start daemon           │
+  │                                             │
+  │  rc-service mbus2mqtt start|stop|status     │
+  │  tail -f /var/log/mbus2mqtt.log             │
+  │  vi /etc/mbus2mqtt/config.yaml              │
+  │                                             │
+  └─────────────────────────────────────────────┘
+MOTDEOF
+
   # Remove build tools — only node + npm + compiled node-mbus remain
   apk del -q .build-deps
   rm -rf /opt/mbus2mqtt/.git /root/.npm /tmp/*
@@ -158,14 +181,5 @@ echo "  Container: $CTID ($HOSTNAME)"
 echo "  IP:        $CTIP"
 echo "  OS:        Alpine Linux (~${MEMORY}MB RAM, ${DISK}GB disk)"
 echo ""
-echo "  Configure:"
-echo "    pct exec $CTID -- vi /etc/mbus2mqtt/config.yaml"
-echo ""
-echo "  Test:"
-echo "    pct exec $CTID -- node /opt/mbus2mqtt/dist/index.js scan -c /etc/mbus2mqtt/config.yaml"
-echo ""
-echo "  Start:"
-echo "    pct exec $CTID -- rc-service mbus2mqtt start"
-echo ""
-echo "  Logs:"
-echo "    pct exec $CTID -- tail -f /var/log/mbus2mqtt.log"
+echo "  Login:     pct enter $CTID"
+echo "  Then type: mbus2mqtt scan"
