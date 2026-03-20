@@ -8,5 +8,5 @@ export function haDiscoveryTopic(property: string, deviceId: string): string {
 }
 
 export function houseAiTopic(property: string, deviceId: string): string {
-  return `house-ai/${property}/meters/${deviceId}`;
+  return `property/${property}/meters/${deviceId}`;
 }

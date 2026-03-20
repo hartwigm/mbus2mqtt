@@ -66,10 +66,16 @@ export class Scheduler {
         log.debug(`Published to HA: ${reading.name} = ${reading.value} ${reading.unit}`);
       }
 
+      // house.ai payload: only value + timestamp (as expected by mqtt_service.py)
+      const houseAiPayload = {
+        value: reading.value,
+        timestamp: now,
+      };
+
       // house.ai publishing: hourly
       if (shouldPublishHouseAiHourly(state)) {
         const topic = houseAiTopic(this.config.property, reading.device_id);
-        await this.mqttClient.publish(topic, payload);
+        await this.mqttClient.publish(topic, houseAiPayload);
         this.store.update(reading.device_id, { last_houseai_hourly: now });
         log.debug(`Published to house.ai (hourly): ${reading.name}`);
       }
@@ -77,8 +83,7 @@ export class Scheduler {
       // house.ai publishing: daily at 23:59
       if (isDailyWindow() && !state.last_houseai_daily?.startsWith(now.slice(0, 10))) {
         const topic = houseAiTopic(this.config.property, reading.device_id);
-        const dailyPayload = { ...payload, type: 'daily_snapshot' };
-        await this.mqttClient.publish(topic, dailyPayload);
+        await this.mqttClient.publish(topic, houseAiPayload);
         this.store.update(reading.device_id, { last_houseai_daily: now });
         log.info(`Published daily snapshot to house.ai: ${reading.name} = ${reading.value} ${reading.unit}`);
       }
