@@ -1,0 +1,16 @@
+[Unit]
+Description=mbus2mqtt - M-Bus to MQTT Gateway
+After=network.target mosquitto.service
+Wants=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/node /opt/mbus2mqtt/dist/index.js run -c /etc/mbus2mqtt/config.yaml
+WorkingDirectory=/opt/mbus2mqtt
+Restart=always
+RestartSec=30
+User=root
+Environment=NODE_ENV=production
+
+[Install]
+WantedBy=multi-user.target

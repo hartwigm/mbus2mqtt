@@ -1,0 +1,28 @@
+{
+  "name": "mbus2mqtt",
+  "version": "1.0.0",
+  "description": "M-Bus meter reader with MQTT publishing for Home Assistant and house.ai",
+  "main": "dist/index.js",
+  "bin": {
+    "mbus2mqtt": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsx src/index.ts"
+  },
+  "dependencies": {
+    "commander": "^12.0.0",
+    "js-yaml": "^4.1.0",
+    "mqtt": "^5.0.0",
+    "node-mbus": "^2.2.4",
+    "pino": "^9.0.0",
+    "pino-pretty": "^11.0.0"
+  },
+  "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^20.0.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.4.0"
+  }
+}

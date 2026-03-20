@@ -1,0 +1,5 @@
+node_modules/
+dist/
+*.log
+state.json
+deploy_remote.py
