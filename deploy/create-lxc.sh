@@ -145,7 +145,7 @@ INITEOF
 
   # CLI alias so "mbus2mqtt" works directly
   cat > /etc/profile.d/mbus2mqtt.sh << '\''ALIASEOF'\''
-alias mbus2mqtt="node /opt/mbus2mqtt/dist/index.js -c /etc/mbus2mqtt/config.yaml"
+alias m2q="node /opt/mbus2mqtt/dist/index.js -c /etc/mbus2mqtt/config.yaml"
 ALIASEOF
 
   # Login banner
@@ -154,10 +154,10 @@ ALIASEOF
   │  mbus2mqtt - M-Bus to MQTT Gateway          │
   ├─────────────────────────────────────────────┤
   │                                             │
-  │  mbus2mqtt scan      Scan ports for meters  │
-  │  mbus2mqtt list      Show meters & values   │
-  │  mbus2mqtt read <id> Read single meter      │
-  │  mbus2mqtt run       Start daemon           │
+  │  m2q scan            Scan ports for meters   │
+  │  m2q list            Show meters & values    │
+  │  m2q read <id>       Read single meter       │
+  │  m2q run             Start daemon            │
   │                                             │
   │  rc-service mbus2mqtt start|stop|status     │
   │  tail -f /var/log/mbus2mqtt.log             │
@@ -182,4 +182,4 @@ echo "  IP:        $CTIP"
 echo "  OS:        Alpine Linux (~${MEMORY}MB RAM, ${DISK}GB disk)"
 echo ""
 echo "  Login:     pct enter $CTID"
-echo "  Then type: mbus2mqtt scan"
+echo "  Then type: m2q scan"
