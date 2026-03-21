@@ -105,6 +105,12 @@ pct exec "$CTID" -- sh -c '
 
   apk update -q && apk upgrade -q
 
+  # Timezone
+  apk add -q tzdata
+  cp /usr/share/zoneinfo/Europe/Berlin /etc/localtime
+  echo "Europe/Berlin" > /etc/timezone
+  apk del -q tzdata
+
   # Runtime dependencies (stay installed)
   apk add -q nodejs npm nano
 
