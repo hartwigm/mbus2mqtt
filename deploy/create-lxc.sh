@@ -150,21 +150,21 @@ ALIASEOF
 
   # Login banner
   cat > /etc/motd << '\''MOTDEOF'\''
-  ┌─────────────────────────────────────────────┐
-  │  mbus2mqtt - M-Bus to MQTT Gateway          │
-  ├─────────────────────────────────────────────┤
-  │                                             │
-  │  m2q scan            Scan ports for meters   │
-  │  m2q list            Show meters & values    │
-  │  m2q read <id>       Read single meter       │
-  │  m2q run             Start daemon            │
-  │                                             │
-  │  rc-service mbus2mqtt start|stop|status     │
-  │  sh /opt/mbus2mqtt/deploy/update.sh        │
-  │  tail -f /var/log/mbus2mqtt.log             │
-  │  nano /etc/mbus2mqtt/config.yaml             │
-  │                                             │
-  └─────────────────────────────────────────────┘
+  ┌──────────────────────────────────────────────────┐
+  │  mbus2mqtt - M-Bus to MQTT Gateway              │
+  ├──────────────────────────────────────────────────┤
+  │                                                  │
+  │  m2q scan            Scan ports for meters       │
+  │  m2q list            Show meters & values        │
+  │  m2q read <id>       Read single meter           │
+  │  m2q run             Start daemon                │
+  │                                                  │
+  │  rc-service mbus2mqtt start|stop|status          │
+  │  sh /opt/mbus2mqtt/deploy/update.sh              │
+  │  tail -f /var/log/mbus2mqtt.log                  │
+  │  nano /etc/mbus2mqtt/config.yaml                 │
+  │                                                  │
+  └──────────────────────────────────────────────────┘
 MOTDEOF
 
   # Remove build tools — only node + npm + compiled node-mbus remain
