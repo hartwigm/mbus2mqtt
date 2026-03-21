@@ -7,6 +7,7 @@ import { cmdScan } from './commands/scan';
 import { cmdList } from './commands/list';
 import { cmdRead } from './commands/read';
 import { cmdRun } from './commands/run';
+import { cmdUpdate } from './commands/update';
 
 const program = new Command();
 
@@ -50,6 +51,13 @@ program
     const config = loadConfig(program.opts().config);
     initLogger(config.logging.level, config.logging.file);
     await cmdRun(config);
+  });
+
+program
+  .command('update')
+  .description('Update mbus2mqtt from GitHub and restart service')
+  .action(async () => {
+    await cmdUpdate();
   });
 
 program.parse();

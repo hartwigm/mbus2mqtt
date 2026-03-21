@@ -58,7 +58,8 @@ export async function readDevice(
     throw new Error(`No numeric value found for ${device.secondary_address}`);
   }
 
-  const factor = device.value_factor ?? 1;
+  const defaultFactor = device.medium === 'water' || device.medium === 'warm_water' ? 0.001 : 1;
+  const factor = device.value_factor ?? defaultFactor;
   const value = primary.value * factor;
 
   log.debug(`Read ${device.name}: ${primary.value} ${primary.unit} (factor ${factor} → ${value})`);
