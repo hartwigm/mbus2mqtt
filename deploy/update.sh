@@ -80,6 +80,12 @@ if [ "$BUILD_DEPS_INSTALLED" = true ]; then
   apk del -q .build-deps
 fi
 
+# Update MOTD from deploy files
+if [ -f "$INSTALL_DIR/deploy/create-lxc.sh" ]; then
+  sed -n '/cat > \/etc\/motd/,/MOTDEOF/p' "$INSTALL_DIR/deploy/create-lxc.sh" \
+    | grep -v 'cat > /etc/motd' | grep -v 'MOTDEOF' > /etc/motd
+fi
+
 # Clean up dev files
 rm -rf "$INSTALL_DIR/src" "$INSTALL_DIR/tsconfig.json" /root/.npm /tmp/*
 

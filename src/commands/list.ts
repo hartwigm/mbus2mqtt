@@ -23,7 +23,8 @@ export async function cmdList(config: Config): Promise<void> {
 
     if (state) {
       if (state.last_value !== null) {
-        value = `${state.last_value} ${state.last_unit}`.padEnd(14);
+        const v = parseFloat(state.last_value.toPrecision(10));
+        value = `${v} ${state.last_unit}`.padEnd(14);
       }
       if (state.last_read) {
         lastRead = state.last_read.slice(0, 19).replace('T', ' ').padEnd(20);
