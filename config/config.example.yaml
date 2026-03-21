@@ -23,12 +23,14 @@ ports:
 
 # M-Bus devices
 # medium: water | warm_water | heat | gas | electricity
+# value_factor: multiply raw value (e.g. 0.001 to convert liters → m³)
 devices:
-  # USB0 - Wasserzähler
+  # USB0 - Wasserzähler (raw value in liters, factor converts to m³)
   - secondary_address: "20135442523B0307"
     port: "usb0"
     name: "WZ 20135442"
     medium: "water"
+    value_factor: 0.001
   - secondary_address: "20136194523B0307"
     port: "usb0"
     name: "WZ 20136194"

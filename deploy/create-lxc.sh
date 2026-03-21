@@ -160,6 +160,7 @@ ALIASEOF
   │  m2q run             Start daemon            │
   │                                             │
   │  rc-service mbus2mqtt start|stop|status     │
+  │  sh /opt/mbus2mqtt/deploy/update.sh        │
   │  tail -f /var/log/mbus2mqtt.log             │
   │  nano /etc/mbus2mqtt/config.yaml             │
   │                                             │

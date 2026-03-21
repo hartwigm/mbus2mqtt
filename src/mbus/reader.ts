@@ -58,13 +58,16 @@ export async function readDevice(
     throw new Error(`No numeric value found for ${device.secondary_address}`);
   }
 
-  log.debug(`Read ${device.name}: ${primary.value} ${primary.unit}`);
+  const factor = device.value_factor ?? 1;
+  const value = primary.value * factor;
+
+  log.debug(`Read ${device.name}: ${primary.value} ${primary.unit} (factor ${factor} → ${value})`);
 
   return {
     device_id: device.secondary_address,
     name: device.name,
     medium: device.medium,
-    value: primary.value,
+    value,
     unit: primary.unit,
     timestamp: new Date().toISOString(),
     raw_records: records as unknown as Record<string, unknown>[],
