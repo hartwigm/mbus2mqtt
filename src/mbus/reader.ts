@@ -60,7 +60,8 @@ export async function readDevice(
 
   const defaultFactor = device.medium === 'water' || device.medium === 'warm_water' ? 0.001 : 1;
   const factor = device.value_factor ?? defaultFactor;
-  const value = primary.value * factor;
+  const raw = primary.value * factor;
+  const value = factor !== 1 ? parseFloat(raw.toPrecision(10)) : raw;
 
   log.debug(`Read ${device.name}: ${primary.value} ${primary.unit} (factor ${factor} → ${value})`);
 

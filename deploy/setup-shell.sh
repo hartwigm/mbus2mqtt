@@ -22,9 +22,11 @@ cat > /etc/motd << 'EOF'
   │  mbus2mqtt read <id> Read single meter      │
   │  mbus2mqtt run       Start daemon           │
   │                                             │
+  │  m2q update          Update from GitHub      │
+  │                                             │
   │  rc-service mbus2mqtt start|stop|status     │
   │  tail -f /var/log/mbus2mqtt.log             │
-  │  vi /etc/mbus2mqtt/config.yaml              │
+  │  nano /etc/mbus2mqtt/config.yaml            │
   │                                             │
   └─────────────────────────────────────────────┘
 EOF

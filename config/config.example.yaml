@@ -1,13 +1,13 @@
 # mbus2mqtt configuration
 # Copy to /etc/mbus2mqtt/config.yaml and adjust
 
-property: "M47"
+property: "m47"
 
 mqtt:
   broker: "mqtt://localhost:1883"
   username: "mbus2mqtt"
   password: "changeme"
-  client_id: "mbus2mqtt-M47"
+  client_id: "mbus2mqtt-m47"
 
 # Default read interval in minutes (can be overridden per device)
 read_interval_minutes: 15

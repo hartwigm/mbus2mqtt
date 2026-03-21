@@ -120,6 +120,13 @@ pct exec "$CTID" -- sh -c '
   # Config and state dirs
   mkdir -p /etc/mbus2mqtt /var/lib/mbus2mqtt
   cp config/config.example.yaml /etc/mbus2mqtt/config.yaml
+'
+
+# Set property name in config (preserving case from command line)
+pct exec "$CTID" -- sed -i "s/^property:.*/property: \"${PROPERTY}\"/" /etc/mbus2mqtt/config.yaml
+pct exec "$CTID" -- sed -i "s/mbus2mqtt-M47/mbus2mqtt-${PROPERTY}/" /etc/mbus2mqtt/config.yaml
+
+pct exec "$CTID" -- sh -c '
 
   # OpenRC service
   cat > /etc/init.d/mbus2mqtt << '\''INITEOF'\''
@@ -158,9 +165,9 @@ ALIASEOF
   │  m2q list            Show meters & values        │
   │  m2q read <id>       Read single meter           │
   │  m2q run             Start daemon                │
+  │  m2q update          Update from GitHub          │
   │                                                  │
   │  rc-service mbus2mqtt start|stop|status          │
-  │  sh /opt/mbus2mqtt/deploy/update.sh              │
   │  tail -f /var/log/mbus2mqtt.log                  │
   │  nano /etc/mbus2mqtt/config.yaml                 │
   │                                                  │
