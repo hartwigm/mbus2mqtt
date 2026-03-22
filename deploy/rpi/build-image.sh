@@ -71,7 +71,7 @@ DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
   git quilt parted qemu-user-static debootstrap \
   zerofree zip dosfstools libarchive-tools bc binfmt-support \
   file xxd rsync xz-utils kmod coreutils kpartx fdisk \
-  ca-certificates curl libcap2-bin pigz 2>&1 | tail -5
+  ca-certificates curl libcap2-bin pigz e2fsprogs gpg 2>&1 | tail -5
 
 # Ensure binfmt_misc is mounted and ARM handler is registered
 if [ ! -d /proc/sys/fs/binfmt_misc ]; then
