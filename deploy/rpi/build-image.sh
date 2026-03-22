@@ -70,8 +70,8 @@ set -e
 
 apt-get update -qq
 DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
-  wget xz-utils fdisk parted losetup kpartx mount e2fsprogs \
-  qemu-user-static binfmt-support ca-certificates 2>&1 | tail -3
+  wget xz-utils fdisk parted util-linux kpartx e2fsprogs \
+  qemu-user-static binfmt-support ca-certificates openssl 2>&1 | tail -3
 
 # Ensure binfmt is set up
 mount binfmt_misc -t binfmt_misc /proc/sys/fs/binfmt_misc 2>/dev/null || true
