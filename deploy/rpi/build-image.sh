@@ -1,6 +1,9 @@
 #!/bin/bash
 #
-# Build mbus2mqtt Raspberry Pi image using pi-gen (Docker)
+# Build mbus2mqtt Raspberry Pi image using pi-gen inside Docker
+#
+# Works on Windows (Docker Desktop), macOS, and Linux.
+# Uses a Linux container with QEMU for ARM cross-compilation.
 #
 # Prerequisites:
 #   - Docker Desktop running
@@ -13,20 +16,10 @@
 # Output:
 #   deploy/rpi/output/mbus2mqtt-*.img.xz
 #
-# The image is based on Raspberry Pi OS Lite (Bookworm, armhf)
-# and includes mbus2mqtt pre-installed with:
-#   - Node.js 22
-#   - mbus2mqtt service (enabled, starts on boot)
-#   - CLI alias: m2q
-#   - SSH enabled
-#   - User: mbus2mqtt / mbus2mqtt
-#   - Timezone: Europe/Berlin
-#   - Locale: de_DE.UTF-8
-#
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PIGEN_DIR="$SCRIPT_DIR/pi-gen"
+PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 OUTPUT_DIR="$SCRIPT_DIR/output"
 
 GREEN='\033[0;32m'
@@ -42,39 +35,57 @@ if ! docker info &>/dev/null; then
   exit 1
 fi
 
-# Clone pi-gen if not present
-if [ ! -d "$PIGEN_DIR" ]; then
-  echo "Cloning pi-gen..."
-  git clone --depth 1 https://github.com/RPi-Distro/pi-gen.git "$PIGEN_DIR"
-fi
+# Register QEMU for ARM emulation (needed on x86 hosts)
+echo "Registering QEMU for ARM emulation..."
+docker run --rm --privileged multiarch/qemu-user-static --reset -p yes 2>/dev/null || true
 
-# Copy our config
-cp "$SCRIPT_DIR/config" "$PIGEN_DIR/config"
+mkdir -p "$OUTPUT_DIR"
 
-# Skip stages 3-5 (desktop stuff)
-touch "$PIGEN_DIR/stage3/SKIP" "$PIGEN_DIR/stage4/SKIP" "$PIGEN_DIR/stage5/SKIP"
-touch "$PIGEN_DIR/stage3/SKIP_IMAGES" "$PIGEN_DIR/stage4/SKIP_IMAGES" "$PIGEN_DIR/stage5/SKIP_IMAGES"
-
-# Don't export stage2 image (we only want our custom stage)
-touch "$PIGEN_DIR/stage2/SKIP_IMAGES"
-
-# Copy our custom stage into pi-gen
-rm -rf "$PIGEN_DIR/stage-mbus2mqtt"
-cp -r "$SCRIPT_DIR/stage-mbus2mqtt" "$PIGEN_DIR/stage-mbus2mqtt"
-chmod +x "$PIGEN_DIR/stage-mbus2mqtt/00-install/01-run.sh"
-chmod +x "$PIGEN_DIR/stage-mbus2mqtt/prerun.sh"
-
-# Build with Docker
 echo ""
-echo "Building image (this takes 30-60 minutes)..."
+echo "Building image inside Docker (this takes 30-60 minutes)..."
 echo ""
-cd "$PIGEN_DIR"
-./build-docker.sh
+
+# Run the entire pi-gen build inside a privileged Debian container
+docker run --rm --privileged \
+  -v "$SCRIPT_DIR:/mbus2mqtt-rpi:ro" \
+  -v "$OUTPUT_DIR:/output" \
+  debian:bookworm bash -c '
+set -e
+
+apt-get update -qq
+apt-get install -y -qq git quilt parted qemu-user-static debootstrap \
+  zerofree zip dosfstools libarchive-tools bc binfmt-support \
+  file xxd rsync xz-utils kmod coreutils kpartx fdisk \
+  ca-certificates curl 2>&1 | tail -5
+
+echo "=== Cloning pi-gen ==="
+git clone --depth 1 https://github.com/RPi-Distro/pi-gen.git /pi-gen
+cd /pi-gen
+
+# Copy config
+cp /mbus2mqtt-rpi/config /pi-gen/config
+
+# Skip stages 3-5
+for s in stage3 stage4 stage5; do
+  touch "/pi-gen/$s/SKIP" "/pi-gen/$s/SKIP_IMAGES"
+done
+touch /pi-gen/stage2/SKIP_IMAGES
+
+# Copy custom stage
+cp -r /mbus2mqtt-rpi/stage-mbus2mqtt /pi-gen/stage-mbus2mqtt
+chmod +x /pi-gen/stage-mbus2mqtt/00-install/01-run.sh
+chmod +x /pi-gen/stage-mbus2mqtt/prerun.sh
+
+echo "=== Starting pi-gen build ==="
+./build.sh
 
 # Copy output
-mkdir -p "$OUTPUT_DIR"
-cp "$PIGEN_DIR/deploy/"*.img.xz "$OUTPUT_DIR/" 2>/dev/null || \
-cp "$PIGEN_DIR/deploy/"*.img "$OUTPUT_DIR/" 2>/dev/null || true
+cp /pi-gen/deploy/*.img.xz /output/ 2>/dev/null || \
+cp /pi-gen/deploy/*.img /output/ 2>/dev/null || \
+cp /pi-gen/deploy/*.zip /output/ 2>/dev/null || true
+
+echo "=== Build finished ==="
+'
 
 echo ""
 echo -e "${GREEN}=== Build complete ===${NC}"
@@ -88,15 +99,15 @@ if [ -n "$IMG" ]; then
   echo "  Flash with:"
   echo "    Raspberry Pi Imager  (recommended)"
   echo "    balenaEtcher"
-  echo "    dd if=$IMG of=/dev/sdX bs=4M status=progress"
+  echo "    dd if=IMAGE of=/dev/sdX bs=4M status=progress"
   echo ""
   echo "  After boot:"
   echo "    1. SSH: ssh mbus2mqtt@<ip>  (password: mbus2mqtt)"
   echo "    2. USB-Adapter anschließen"
   echo "    3. m2q setup"
-  echo "    4. nano /etc/mbus2mqtt/config.yaml"
+  echo "    4. sudo nano /etc/mbus2mqtt/config.yaml"
   echo "    5. sudo systemctl start mbus2mqtt"
 else
   echo -e "${RED}  No image found in output directory.${NC}"
-  echo "  Check pi-gen logs: $PIGEN_DIR/deploy/"
+  echo "  Check build logs above for errors."
 fi
