@@ -63,6 +63,35 @@ const INITIAL_TIMEOUT_MS = 120000;   // 2 min — no activity = skip
 const EXTENDED_TIMEOUT_MS = 600000;  // 10 min — bus activity detected, full scan
 const SETTLE_DELAY_MS = 3000;        // delay between baud rate switches
 
+/**
+ * Installs a single stderr interceptor that:
+ * - Detects mbus_serial_recv_frame messages (bus activity)
+ * - Suppresses all native mbus stderr output
+ * - Calls onActivity() when first activity is detected
+ *
+ * Returns a cleanup function that MUST be called to restore stderr.
+ */
+function installStderrMonitor(onActivity: () => void): { cleanup: () => void } {
+  const origWrite = process.stderr.write.bind(process.stderr);
+  let activityDetected = false;
+
+  process.stderr.write = ((chunk: any, ...args: any[]): boolean => {
+    const str = typeof chunk === 'string' ? chunk : chunk.toString();
+    if (str.includes('mbus_serial') || str.includes('mbus_frame')) {
+      if (!activityDetected) {
+        activityDetected = true;
+        onActivity();
+      }
+      return true; // suppress all native mbus output
+    }
+    return origWrite(chunk, ...args);
+  }) as any;
+
+  return {
+    cleanup: () => { process.stderr.write = origWrite; },
+  };
+}
+
 export async function scanPortExtended(portConfig: PortConfig): Promise<ExtendedScanResult> {
   const result: ExtendedScanResult = {
     port: portConfig.alias,
@@ -72,76 +101,83 @@ export async function scanPortExtended(portConfig: PortConfig): Promise<Extended
   };
 
   const seen = new Set<string>();
-  // Global stderr suppressor for mbus native output between scans
-  const origStderrWrite = process.stderr.write.bind(process.stderr);
-  let suppressStderr = false;
-  const stderrGuard = (chunk: any, ...args: any[]): boolean => {
-    const str = typeof chunk === 'string' ? chunk : chunk.toString();
-    if (suppressStderr && (str.includes('mbus_serial') || str.includes('mbus_frame'))) {
-      return true; // suppress
-    }
-    return origStderrWrite(chunk, ...args);
-  };
-  process.stderr.write = stderrGuard as any;
 
-  try {
-    for (const baudRate of MBUS_BAUD_RATES) {
-      const conn = new MbusConnection(portConfig.path, baudRate, portConfig.alias);
-      const startTime = Date.now();
-      let restoreStderr: (() => void) | null = null;
+  for (const baudRate of MBUS_BAUD_RATES) {
+    const conn = new MbusConnection(portConfig.path, baudRate, portConfig.alias);
+    const startTime = Date.now();
+    let busActivity = false;
+    let currentTimeout = INITIAL_TIMEOUT_MS;
 
-      const progressInterval = setInterval(() => {
-        const elapsed = Math.round((Date.now() - startTime) / 1000);
-        process.stdout.write(`\r  ⏳ ${portConfig.alias} @${baudRate}: Scan läuft... ${elapsed}s   `);
-      }, 3000);
+    // Install stderr monitor for this baud rate scan
+    const monitor = installStderrMonitor(() => {
+      busActivity = true;
+      currentTimeout = EXTENDED_TIMEOUT_MS;
+      process.stdout.write(`\n  📡 ${portConfig.alias} @${baudRate}: Bus-Aktivität erkannt — Timeout auf ${EXTENDED_TIMEOUT_MS / 1000}s verlängert\n`);
+    });
 
-      try {
-        console.log(`\n  🔌 ${portConfig.alias}: Teste ${baudRate} baud...`);
-        await conn.connect();
-        console.log(`  ⏳ ${portConfig.alias} @${baudRate}: Scan (${INITIAL_TIMEOUT_MS / 1000}s, +${EXTENDED_TIMEOUT_MS / 1000}s bei Aktivität)...`);
-        const scanResult = await conn.scanSecondaryDynamic(INITIAL_TIMEOUT_MS, EXTENDED_TIMEOUT_MS);
-        restoreStderr = scanResult.restoreStderr;
-        clearInterval(progressInterval);
-        const elapsed = Math.round((Date.now() - startTime) / 1000);
-        const devices = scanResult.devices;
+    const progressInterval = setInterval(() => {
+      const elapsed = Math.round((Date.now() - startTime) / 1000);
+      const timeoutLabel = busActivity ? `${EXTENDED_TIMEOUT_MS / 1000}s` : `${INITIAL_TIMEOUT_MS / 1000}s`;
+      process.stdout.write(`\r  ⏳ ${portConfig.alias} @${baudRate}: Scan läuft... ${elapsed}s (max ${timeoutLabel})   `);
+    }, 3000);
 
-        const newDevices = devices.filter(id => !seen.has(id));
-        for (const id of devices) seen.add(id);
+    try {
+      console.log(`\n  🔌 ${portConfig.alias}: Teste ${baudRate} baud...`);
+      await conn.connect();
+      console.log(`  ⏳ ${portConfig.alias} @${baudRate}: Scan (${INITIAL_TIMEOUT_MS / 1000}s, verlängert auf ${EXTENDED_TIMEOUT_MS / 1000}s bei Aktivität)...`);
 
-        if (devices.length > 0) {
-          process.stdout.write(`\r  ✅ ${portConfig.alias} @${baudRate}: ${devices.length} Gerät(e) gefunden nach ${elapsed}s`);
-          if (newDevices.length < devices.length) {
-            process.stdout.write(` (${newDevices.length} neu)`);
+      // Use a scan loop that checks bus activity for dynamic timeout
+      const devices = await new Promise<string[]>((resolve, reject) => {
+        const checkTimeout = () => {
+          const elapsed = Date.now() - startTime;
+          if (elapsed >= currentTimeout) {
+            reject(new Error(`Scan timeout on ${portConfig.alias} @${baudRate}`));
           }
-          process.stdout.write('\n');
-          for (const id of devices) {
-            const isNew = newDevices.includes(id);
-            console.log(`     ${isNew ? '🆕' : '  '} ${id}`);
-            if (isNew) {
-              result.devices.push({ secondary_address: id, baud_rate: baudRate });
-            }
-          }
-        } else {
-          process.stdout.write(`\r  ⚪ ${portConfig.alias} @${baudRate}: Keine Geräte (${elapsed}s)\n`);
+        };
+        const timeoutChecker = setInterval(checkTimeout, 1000);
+
+        conn.scanSecondary(EXTENDED_TIMEOUT_MS + 10000).then(ids => {
+          clearInterval(timeoutChecker);
+          resolve(ids);
+        }).catch(err => {
+          clearInterval(timeoutChecker);
+          reject(err);
+        });
+      });
+
+      clearInterval(progressInterval);
+      const elapsed = Math.round((Date.now() - startTime) / 1000);
+
+      const newDevices = devices.filter(id => !seen.has(id));
+      for (const id of devices) seen.add(id);
+
+      if (devices.length > 0) {
+        process.stdout.write(`\r  ✅ ${portConfig.alias} @${baudRate}: ${devices.length} Gerät(e) gefunden nach ${elapsed}s`);
+        if (newDevices.length < devices.length) {
+          process.stdout.write(` (${newDevices.length} neu)`);
         }
-      } catch (err) {
-        clearInterval(progressInterval);
-        const elapsed = Math.round((Date.now() - startTime) / 1000);
-        const message = err instanceof Error ? err.message : String(err);
-        process.stdout.write(`\r  ⚠️  ${portConfig.alias} @${baudRate}: Timeout nach ${elapsed}s — weiter\n`);
-        result.errors.push({ baud_rate: baudRate, error: message });
+        process.stdout.write('\n');
+        for (const id of devices) {
+          const isNew = newDevices.includes(id);
+          console.log(`     ${isNew ? '🆕' : '  '} ${id}`);
+          if (isNew) {
+            result.devices.push({ secondary_address: id, baud_rate: baudRate });
+          }
+        }
+      } else {
+        process.stdout.write(`\r  ⚪ ${portConfig.alias} @${baudRate}: Keine Geräte (${elapsed}s)\n`);
       }
-
-      // Suppress stderr during close + settle to catch leftover native output
-      suppressStderr = true;
-      await conn.forceClose();
-      await new Promise(r => setTimeout(r, SETTLE_DELAY_MS));
-      if (restoreStderr) restoreStderr();
-      suppressStderr = false;
+    } catch (err) {
+      clearInterval(progressInterval);
+      const elapsed = Math.round((Date.now() - startTime) / 1000);
+      process.stdout.write(`\r  ⚠️  ${portConfig.alias} @${baudRate}: Timeout nach ${elapsed}s — weiter\n`);
+      result.errors.push({ baud_rate: baudRate, error: err instanceof Error ? err.message : String(err) });
     }
-  } finally {
-    // Always restore original stderr
-    process.stderr.write = origStderrWrite;
+
+    // Force close, wait for settle, THEN restore stderr
+    await conn.forceClose();
+    await new Promise(r => setTimeout(r, SETTLE_DELAY_MS));
+    monitor.cleanup();
   }
 
   return result;
