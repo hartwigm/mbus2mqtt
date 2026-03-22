@@ -2,7 +2,7 @@ import { MbusConnection } from './connection';
 import { PortConfig } from '../types';
 import { getLogger } from '../util/logger';
 
-export const MBUS_BAUD_RATES = [300, 600, 1200, 2400, 4800, 9600, 19200, 38400];
+export const MBUS_BAUD_RATES = [300, 600, 1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200, 230400, 460800, 921600];
 
 export interface ScanResult {
   port: string;
