@@ -91,27 +91,33 @@ xz -d "$IMG_FILE"
 echo "=== Expanding image ==="
 dd if=/dev/zero bs=1M count=500 >> "$IMG"
 
-# Set up loop device
-LOOP=$(losetup --find --show --partscan "$IMG")
+# Set up loop device with kpartx (works reliably in Docker)
+LOOP=$(losetup --find --show "$IMG")
 echo "Loop device: $LOOP"
 
 # Resize partition 2 (rootfs) to fill available space
 parted -s "$LOOP" resizepart 2 100%
 
-# Wait for partition devices
-partprobe "$LOOP"
+# Create partition device mappings via kpartx
+kpartx -av "$LOOP"
 sleep 2
 
+# kpartx creates /dev/mapper/loopXpY
+LOOP_NAME=$(basename "$LOOP")
+PART1="/dev/mapper/${LOOP_NAME}p1"
+PART2="/dev/mapper/${LOOP_NAME}p2"
+echo "Partitions: $PART1, $PART2"
+
 # Resize filesystem
-e2fsck -f -y "${LOOP}p2" || true
-resize2fs "${LOOP}p2"
+e2fsck -f -y "$PART2" || true
+resize2fs "$PART2"
 
 # Mount
 ROOTFS="/mnt/rootfs"
 BOOTFS="/mnt/bootfs"
 mkdir -p "$ROOTFS" "$BOOTFS"
-mount "${LOOP}p2" "$ROOTFS"
-mount "${LOOP}p1" "$BOOTFS"
+mount "$PART2" "$ROOTFS"
+mount "$PART1" "$BOOTFS"
 
 echo "=== Configuring image ==="
 
@@ -171,6 +177,7 @@ echo "=== Unmounting ==="
 sync
 umount "$BOOTFS"
 umount "$ROOTFS"
+kpartx -dv "$LOOP"
 losetup -d "$LOOP"
 
 echo "=== Compressing image ==="
