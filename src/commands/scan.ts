@@ -1,16 +1,25 @@
 import { Config } from '../types';
 import { scanAllPorts, scanAllPortsExtended, MBUS_BAUD_RATES } from '../mbus/scanner';
 
-export async function cmdScan(config: Config, extended: boolean): Promise<void> {
+export async function cmdScan(config: Config, extended: boolean, portFilter?: string): Promise<void> {
+  const ports = portFilter
+    ? config.ports.filter(p => p.alias === portFilter)
+    : config.ports;
+
+  if (portFilter && ports.length === 0) {
+    console.log(`\n  ❌ Port "${portFilter}" nicht gefunden. Verfügbar: ${config.ports.map(p => p.alias).join(', ')}\n`);
+    return;
+  }
+
   if (extended) {
-    return cmdScanExtended(config);
+    return cmdScanExtended(config, ports);
   }
 
   console.log('\n  M-Bus Scan — alle konfigurierten Ports\n');
-  console.log(`  Ports: ${config.ports.map(p => p.alias).join(', ')}`);
+  console.log(`  Ports: ${ports.map(p => p.alias).join(', ')}`);
   console.log(`  ${'─'.repeat(50)}`);
 
-  const results = await scanAllPorts(config.ports);
+  const results = await scanAllPorts(ports);
 
   console.log(`\n  ${'═'.repeat(50)}`);
   console.log('  Ergebnisse:\n');
@@ -33,15 +42,15 @@ export async function cmdScan(config: Config, extended: boolean): Promise<void> 
   }
 }
 
-async function cmdScanExtended(config: Config): Promise<void> {
+async function cmdScanExtended(config: Config, ports: typeof config.ports): Promise<void> {
   console.log('\n  M-Bus Extended Scan — alle Baudraten testen\n');
-  console.log(`  Ports: ${config.ports.map(p => p.alias).join(', ')}`);
+  console.log(`  Ports: ${ports.map(p => p.alias).join(', ')}`);
   console.log(`  Baudraten: ${MBUS_BAUD_RATES.join(', ')}`);
   console.log(`  ${'─'.repeat(50)}`);
   console.log('  ⚠️  Jeder Port wird nacheinander mit jeder Baudrate gescannt.');
   console.log('  Das kann pro Port bis zu 80 Minuten dauern.\n');
 
-  const results = await scanAllPortsExtended(config.ports);
+  const results = await scanAllPortsExtended(ports);
 
   console.log(`\n  ${'═'.repeat(50)}`);
   console.log('  Ergebnisse Extended Scan:\n');
