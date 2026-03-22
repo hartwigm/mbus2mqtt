@@ -109,13 +109,13 @@ export class MbusConnection {
     });
   }
 
-  async scanSecondary(): Promise<string[]> {
+  async scanSecondary(timeoutMs: number = 600000): Promise<string[]> {
     if (!this.master) throw new Error(`Not connected to ${this.alias}`);
 
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
-        reject(new Error(`Scan timeout on ${this.alias}`));
-      }, 600000);
+        reject(new Error(`Scan timeout on ${this.alias} @${this.baudRate}`));
+      }, timeoutMs);
 
       this.master!.scanSecondary((err, ids) => {
         clearTimeout(timeout);
@@ -123,6 +123,16 @@ export class MbusConnection {
         else resolve(ids);
       });
     });
+  }
+
+  async forceClose(): Promise<void> {
+    if (!this.master) return;
+    try {
+      this.master.close(() => {}, true);
+    } catch {
+      // ignore errors during force close
+    }
+    this.master = null;
   }
 
   getAlias(): string { return this.alias; }
