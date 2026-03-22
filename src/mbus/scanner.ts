@@ -59,8 +59,9 @@ export async function scanAllPorts(ports: PortConfig[]): Promise<ScanResult[]> {
   return Promise.all(ports.map(p => scanPort(p)));
 }
 
-const EXTENDED_SCAN_TIMEOUT_MS = 120000; // 2 min per baud rate
-const SETTLE_DELAY_MS = 2000; // delay between baud rate switches
+const INITIAL_TIMEOUT_MS = 120000;   // 2 min — no activity = skip
+const EXTENDED_TIMEOUT_MS = 600000;  // 10 min — bus activity detected, full scan
+const SETTLE_DELAY_MS = 2000;        // delay between baud rate switches
 
 export async function scanPortExtended(portConfig: PortConfig): Promise<ExtendedScanResult> {
   const result: ExtendedScanResult = {
@@ -84,8 +85,8 @@ export async function scanPortExtended(portConfig: PortConfig): Promise<Extended
     try {
       console.log(`\n  🔌 ${portConfig.alias}: Teste ${baudRate} baud...`);
       await conn.connect();
-      console.log(`  ⏳ ${portConfig.alias} @${baudRate}: Scan gestartet (Timeout: ${EXTENDED_SCAN_TIMEOUT_MS / 1000}s)...`);
-      const devices = await conn.scanSecondary(EXTENDED_SCAN_TIMEOUT_MS);
+      console.log(`  ⏳ ${portConfig.alias} @${baudRate}: Scan gestartet (${INITIAL_TIMEOUT_MS / 1000}s, verlängert auf ${EXTENDED_TIMEOUT_MS / 1000}s bei Aktivität)...`);
+      const devices = await conn.scanSecondaryDynamic(INITIAL_TIMEOUT_MS, EXTENDED_TIMEOUT_MS);
       clearInterval(progressInterval);
       const elapsed = Math.round((Date.now() - startTime) / 1000);
 
@@ -112,7 +113,7 @@ export async function scanPortExtended(portConfig: PortConfig): Promise<Extended
       clearInterval(progressInterval);
       const elapsed = Math.round((Date.now() - startTime) / 1000);
       const message = err instanceof Error ? err.message : String(err);
-      process.stdout.write(`\r  ⚠️  ${portConfig.alias} @${baudRate}: Timeout/Fehler nach ${elapsed}s — weiter mit nächster Baudrate\n`);
+      process.stdout.write(`\r  ⚠️  ${portConfig.alias} @${baudRate}: Timeout nach ${elapsed}s — weiter mit nächster Baudrate\n`);
       result.errors.push({ baud_rate: baudRate, error: message });
     }
 

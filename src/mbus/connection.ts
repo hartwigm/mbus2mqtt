@@ -125,6 +125,55 @@ export class MbusConnection {
     });
   }
 
+  /**
+   * Scan with dynamic timeout: starts with initialTimeoutMs.
+   * If stderr activity (e.g. mbus_serial_recv_frame) is detected,
+   * the timeout extends to extendedTimeoutMs since bus activity means
+   * devices are present and the scan needs more time.
+   */
+  async scanSecondaryDynamic(initialTimeoutMs: number, extendedTimeoutMs: number): Promise<string[]> {
+    if (!this.master) throw new Error(`Not connected to ${this.alias}`);
+
+    return new Promise((resolve, reject) => {
+      let busActivity = false;
+      let timer: NodeJS.Timeout;
+
+      // Intercept stderr to detect native libmbus output
+      const origStderrWrite = process.stderr.write.bind(process.stderr);
+      const stderrHook = (chunk: any, ...args: any[]): boolean => {
+        const str = typeof chunk === 'string' ? chunk : chunk.toString();
+        if (str.includes('mbus_serial_recv_frame')) {
+          if (!busActivity) {
+            busActivity = true;
+            // Extend timeout — activity detected on bus
+            clearTimeout(timer);
+            timer = setTimeout(() => {
+              reject(new Error(`Scan timeout on ${this.alias} @${this.baudRate} (extended, bus activity detected)`));
+            }, extendedTimeoutMs);
+            process.stdout.write(`\n  📡 ${this.alias} @${this.baudRate}: Bus-Aktivität erkannt — Timeout auf ${extendedTimeoutMs / 1000}s verlängert\n`);
+          }
+          // Suppress native mbus_serial_recv_frame output
+          return true;
+        }
+        return origStderrWrite(chunk, ...args);
+      };
+
+      process.stderr.write = stderrHook as any;
+
+      timer = setTimeout(() => {
+        process.stderr.write = origStderrWrite;
+        reject(new Error(`Scan timeout on ${this.alias} @${this.baudRate}`));
+      }, initialTimeoutMs);
+
+      this.master!.scanSecondary((err, ids) => {
+        clearTimeout(timer);
+        process.stderr.write = origStderrWrite;
+        if (err) reject(err);
+        else resolve(ids);
+      });
+    });
+  }
+
   async forceClose(): Promise<void> {
     if (!this.master) return;
     try {
