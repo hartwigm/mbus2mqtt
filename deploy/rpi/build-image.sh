@@ -1,134 +1,204 @@
 #!/bin/bash
 #
-# Build mbus2mqtt Raspberry Pi image using pi-gen inside Docker
+# mbus2mqtt Raspberry Pi image — download base + embed setup
 #
-# Works on Windows (Docker Desktop), macOS, and Linux.
-# Uses a Linux container with QEMU for ARM cross-compilation.
+# Downloads Raspberry Pi OS Lite, embeds the mbus2mqtt setup script
+# as a first-boot service so mbus2mqtt is installed automatically
+# on first boot (requires internet on the Pi).
 #
 # Prerequisites:
-#   - Docker Desktop running
-#   - ~10GB free disk space
+#   - Docker Desktop running (for image manipulation)
+#   - ~2GB free disk space
 #   - Internet connection
 #
 # Usage:
-#   bash deploy/rpi/build-image.sh
+#   bash deploy/rpi/build-image.sh [PROPERTY_NAME]
+#   Example: bash deploy/rpi/build-image.sh M47
 #
 # Output:
-#   deploy/rpi/output/mbus2mqtt-*.img.xz
+#   deploy/rpi/output/mbus2mqtt-rpi.img.xz
 #
 set -e
 
+PROPERTY="${1:-M47}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 OUTPUT_DIR="$SCRIPT_DIR/output"
-
-# Convert MSYS/Git Bash paths to Docker-compatible paths on Windows
-to_docker_path() {
-  local p="$1"
-  if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" || "$OSTYPE" == "win32" ]]; then
-    # /c/Users/... → C:/Users/...
-    echo "$p" | sed 's|^/\([a-zA-Z]\)/|\1:/|'
-  else
-    echo "$p"
-  fi
-}
-DOCKER_SCRIPT_DIR="$(to_docker_path "$SCRIPT_DIR")"
-DOCKER_OUTPUT_DIR="$(to_docker_path "$OUTPUT_DIR")"
 
 GREEN='\033[0;32m'
 RED='\033[0;31m'
 NC='\033[0m'
 
+# Convert MSYS/Git Bash paths to Docker-compatible paths on Windows
+to_docker_path() {
+  local p="$1"
+  if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" || "$OSTYPE" == "win32" ]]; then
+    echo "$p" | sed 's|^/\([a-zA-Z]\)/|\1:/|'
+  else
+    echo "$p"
+  fi
+}
+
 echo -e "${GREEN}=== mbus2mqtt Raspberry Pi Image Builder ===${NC}"
+echo "  Property: $PROPERTY"
 echo ""
 
-# Check Docker
 if ! docker info &>/dev/null; then
-  echo -e "${RED}Error: Docker is not running. Start Docker Desktop first.${NC}"
+  echo -e "${RED}Error: Docker is not running.${NC}"
   exit 1
 fi
 
-# Register QEMU for ARM emulation (needed on x86 hosts)
-echo "Registering QEMU for ARM emulation..."
-docker run --rm --privileged multiarch/qemu-user-static --reset -p yes 2>/dev/null || true
-
 mkdir -p "$OUTPUT_DIR"
 
-echo ""
-echo "Building image inside Docker (this takes 30-60 minutes)..."
+DOCKER_SCRIPT_DIR="$(to_docker_path "$SCRIPT_DIR")"
+DOCKER_OUTPUT_DIR="$(to_docker_path "$OUTPUT_DIR")"
+
+echo "Building image inside Docker..."
+echo "  1. Download Raspberry Pi OS Lite"
+echo "  2. Inject mbus2mqtt first-boot setup"
+echo "  3. Enable SSH, set locale/timezone"
 echo ""
 
-# Run the entire pi-gen build inside a privileged Debian container
-# Use MSYS_NO_PATHCONV to prevent Git Bash from mangling paths
+# Register QEMU for ARM (needed to chroot into ARM image)
+docker run --rm --privileged multiarch/qemu-user-static --reset -p yes 2>/dev/null || true
+
 MSYS_NO_PATHCONV=1 docker run --rm --privileged \
   -v "$DOCKER_SCRIPT_DIR:/mbus2mqtt-rpi:ro" \
   -v "$DOCKER_OUTPUT_DIR:/output" \
-  debian:trixie bash -c '
+  -e "PROPERTY=$PROPERTY" \
+  debian:bookworm bash -c '
 set -e
 
 apt-get update -qq
 DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
-  git quilt parted qemu-user-static debootstrap \
-  zerofree zip dosfstools libarchive-tools bc binfmt-support \
-  file xxd rsync xz-utils kmod coreutils kpartx fdisk \
-  ca-certificates curl libcap2-bin pigz e2fsprogs gpg 2>&1 | tail -5
+  wget xz-utils fdisk parted losetup kpartx mount e2fsprogs \
+  qemu-user-static binfmt-support ca-certificates 2>&1 | tail -3
 
-# Ensure binfmt_misc is mounted and ARM handler is registered
-if [ ! -d /proc/sys/fs/binfmt_misc ]; then
-  mount binfmt_misc -t binfmt_misc /proc/sys/fs/binfmt_misc 2>/dev/null || true
-fi
+# Ensure binfmt is set up
+mount binfmt_misc -t binfmt_misc /proc/sys/fs/binfmt_misc 2>/dev/null || true
 update-binfmts --enable qemu-arm 2>/dev/null || true
 
-echo "=== Cloning pi-gen ==="
-git clone --depth 1 https://github.com/RPi-Distro/pi-gen.git /pi-gen
-cd /pi-gen
+# Download Raspberry Pi OS Lite (armhf = RPi 2/3/4)
+IMG_URL="https://downloads.raspberrypi.com/raspios_lite_armhf/images/raspios_lite_armhf-2024-11-19/2024-11-19-raspios-bookworm-armhf-lite.img.xz"
+IMG_FILE="/tmp/rpios.img.xz"
+IMG="/tmp/rpios.img"
 
-# Copy config
-cp /mbus2mqtt-rpi/config /pi-gen/config
+echo "=== Downloading Raspberry Pi OS Lite ==="
+wget -q --show-progress -O "$IMG_FILE" "$IMG_URL"
+echo "Extracting..."
+xz -d "$IMG_FILE"
 
-# Skip stages 3-5
-for s in stage3 stage4 stage5; do
-  touch "/pi-gen/$s/SKIP" "/pi-gen/$s/SKIP_IMAGES"
-done
-touch /pi-gen/stage2/SKIP_IMAGES
+# Expand image by 500MB for mbus2mqtt
+echo "=== Expanding image ==="
+dd if=/dev/zero bs=1M count=500 >> "$IMG"
 
-# Copy custom stage
-cp -r /mbus2mqtt-rpi/stage-mbus2mqtt /pi-gen/stage-mbus2mqtt
-chmod +x /pi-gen/stage-mbus2mqtt/00-install/01-run.sh
-chmod +x /pi-gen/stage-mbus2mqtt/prerun.sh
+# Set up loop device
+LOOP=$(losetup --find --show --partscan "$IMG")
+echo "Loop device: $LOOP"
 
-echo "=== Starting pi-gen build ==="
-./build.sh
+# Resize partition 2 (rootfs) to fill available space
+parted -s "$LOOP" resizepart 2 100%
 
-# Copy output
-cp /pi-gen/deploy/*.img.xz /output/ 2>/dev/null || \
-cp /pi-gen/deploy/*.img /output/ 2>/dev/null || \
-cp /pi-gen/deploy/*.zip /output/ 2>/dev/null || true
+# Wait for partition devices
+partprobe "$LOOP"
+sleep 2
 
-echo "=== Build finished ==="
+# Resize filesystem
+e2fsck -f -y "${LOOP}p2" || true
+resize2fs "${LOOP}p2"
+
+# Mount
+ROOTFS="/mnt/rootfs"
+BOOTFS="/mnt/bootfs"
+mkdir -p "$ROOTFS" "$BOOTFS"
+mount "${LOOP}p2" "$ROOTFS"
+mount "${LOOP}p1" "$BOOTFS"
+
+echo "=== Configuring image ==="
+
+# Enable SSH
+touch "$BOOTFS/ssh"
+
+# Set user (pi:mbus2mqtt) via userconf
+echo "mbus2mqtt:$(echo "mbus2mqtt" | openssl passwd -6 -stdin)" > "$BOOTFS/userconf.txt"
+
+# Copy setup script
+cp /mbus2mqtt-rpi/setup-rpi.sh "$ROOTFS/opt/mbus2mqtt-setup.sh"
+chmod +x "$ROOTFS/opt/mbus2mqtt-setup.sh"
+
+# Create first-boot service that runs setup
+cat > "$ROOTFS/etc/systemd/system/mbus2mqtt-firstboot.service" << SVCEOF
+[Unit]
+Description=mbus2mqtt first-boot setup
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=/opt/mbus2mqtt-setup.sh
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash /opt/mbus2mqtt-setup.sh $PROPERTY
+ExecStartPost=/bin/rm -f /opt/mbus2mqtt-setup.sh
+ExecStartPost=/bin/systemctl disable mbus2mqtt-firstboot.service
+RemainAfterExit=yes
+StandardOutput=journal+console
+
+[Install]
+WantedBy=multi-user.target
+SVCEOF
+
+# Enable service
+ln -sf /etc/systemd/system/mbus2mqtt-firstboot.service \
+  "$ROOTFS/etc/systemd/system/multi-user.target.wants/mbus2mqtt-firstboot.service"
+
+# Set timezone
+ln -sf /usr/share/zoneinfo/Europe/Berlin "$ROOTFS/etc/localtime"
+echo "Europe/Berlin" > "$ROOTFS/etc/timezone"
+
+# Set hostname
+echo "mbus2mqtt-${PROPERTY,,}" > "$ROOTFS/etc/hostname"
+sed -i "s/127.0.1.1.*/127.0.1.1\tmbus2mqtt-${PROPERTY,,}/" "$ROOTFS/etc/hosts"
+
+# Set German keyboard layout
+mkdir -p "$ROOTFS/etc/default"
+cat > "$ROOTFS/etc/default/keyboard" << KBEOF
+XKBMODEL="pc105"
+XKBLAYOUT="de"
+XKBVARIANT=""
+XKBOPTIONS=""
+BACKSPACE="guess"
+KBEOF
+
+echo "=== Unmounting ==="
+sync
+umount "$BOOTFS"
+umount "$ROOTFS"
+losetup -d "$LOOP"
+
+echo "=== Compressing image ==="
+xz -T0 -3 "$IMG"
+cp /tmp/rpios.img.xz /output/mbus2mqtt-rpi.img.xz
+
+echo "=== Done ==="
 '
 
 echo ""
-echo -e "${GREEN}=== Build complete ===${NC}"
-echo ""
-
-IMG=$(ls -1 "$OUTPUT_DIR/"*.img* 2>/dev/null | head -1)
-if [ -n "$IMG" ]; then
+IMG="$OUTPUT_DIR/mbus2mqtt-rpi.img.xz"
+if [ -f "$IMG" ]; then
   SIZE=$(du -h "$IMG" | cut -f1)
+  echo -e "${GREEN}=== Image erstellt ===${NC}"
+  echo ""
   echo "  Image: $IMG ($SIZE)"
   echo ""
-  echo "  Flash with:"
-  echo "    Raspberry Pi Imager  (recommended)"
+  echo "  Flash mit:"
+  echo "    Raspberry Pi Imager  (empfohlen)"
   echo "    balenaEtcher"
-  echo "    dd if=IMAGE of=/dev/sdX bs=4M status=progress"
   echo ""
-  echo "  After boot:"
-  echo "    1. SSH: ssh mbus2mqtt@<ip>  (password: mbus2mqtt)"
-  echo "    2. USB-Adapter anschließen"
-  echo "    3. m2q setup"
-  echo "    4. sudo nano /etc/mbus2mqtt/config.yaml"
-  echo "    5. sudo systemctl start mbus2mqtt"
+  echo "  Nach dem Booten:"
+  echo "    - Erstes Boot dauert 5-10 Min (Setup läuft automatisch)"
+  echo "    - SSH: ssh mbus2mqtt@mbus2mqtt-${PROPERTY,,}.local"
+  echo "    - Passwort: mbus2mqtt"
+  echo "    - USB-Adapter anschließen"
+  echo "    - m2q setup"
+  echo "    - sudo nano /etc/mbus2mqtt/config.yaml"
 else
-  echo -e "${RED}  No image found in output directory.${NC}"
-  echo "  Check build logs above for errors."
+  echo -e "${RED}Image nicht gefunden. Prüfe die Logs oben.${NC}"
 fi
