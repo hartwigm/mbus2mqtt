@@ -61,11 +61,13 @@ devices:
     medium: "water"
 
   # USB1 - Wärmezähler (read_interval_minutes overrides global default)
+  # baud_rate: optional, overrides port baud rate for this device
   - secondary_address: "21000094523B0504"
     port: "usb1"
     name: "Wärmemengenzähler"
     medium: "heat"
     read_interval_minutes: 5
+    # baud_rate: 9600
 
 logging:
   level: "info"

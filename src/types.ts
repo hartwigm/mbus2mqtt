@@ -11,6 +11,7 @@ export interface DeviceConfig {
   medium: 'water' | 'warm_water' | 'heat' | 'gas' | 'electricity';
   value_factor?: number;
   read_interval_minutes?: number;
+  baud_rate?: number;
 }
 
 export interface MqttConfig {

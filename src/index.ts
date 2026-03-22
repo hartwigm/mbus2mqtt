@@ -21,10 +21,11 @@ program
 program
   .command('scan')
   .description('Scan all configured ports for M-Bus devices')
-  .action(async () => {
+  .option('-e, --extended', 'Alle Baudraten testen (300–38400)')
+  .action(async (opts) => {
     const config = loadConfig(program.opts().config);
     initLogger(config.logging.level, config.logging.file);
-    await cmdScan(config);
+    await cmdScan(config, opts.extended || false);
   });
 
 program
