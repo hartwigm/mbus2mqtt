@@ -22,6 +22,19 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 OUTPUT_DIR="$SCRIPT_DIR/output"
 
+# Convert MSYS/Git Bash paths to Docker-compatible paths on Windows
+to_docker_path() {
+  local p="$1"
+  if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" || "$OSTYPE" == "win32" ]]; then
+    # /c/Users/... → C:/Users/...
+    echo "$p" | sed 's|^/\([a-zA-Z]\)/|\1:/|'
+  else
+    echo "$p"
+  fi
+}
+DOCKER_SCRIPT_DIR="$(to_docker_path "$SCRIPT_DIR")"
+DOCKER_OUTPUT_DIR="$(to_docker_path "$OUTPUT_DIR")"
+
 GREEN='\033[0;32m'
 RED='\033[0;31m'
 NC='\033[0m'
@@ -46,9 +59,10 @@ echo "Building image inside Docker (this takes 30-60 minutes)..."
 echo ""
 
 # Run the entire pi-gen build inside a privileged Debian container
-docker run --rm --privileged \
-  -v "$SCRIPT_DIR:/mbus2mqtt-rpi:ro" \
-  -v "$OUTPUT_DIR:/output" \
+# Use MSYS_NO_PATHCONV to prevent Git Bash from mangling paths
+MSYS_NO_PATHCONV=1 docker run --rm --privileged \
+  -v "$DOCKER_SCRIPT_DIR:/mbus2mqtt-rpi:ro" \
+  -v "$DOCKER_OUTPUT_DIR:/output" \
   debian:bookworm bash -c '
 set -e
 
