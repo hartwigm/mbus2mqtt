@@ -61,7 +61,7 @@ export async function scanAllPorts(ports: PortConfig[]): Promise<ScanResult[]> {
 
 const INITIAL_TIMEOUT_MS = 120000;   // 2 min — no activity = skip
 const EXTENDED_TIMEOUT_MS = 600000;  // 10 min — bus activity detected, full scan
-const SETTLE_DELAY_MS = 3000;        // delay between baud rate switches
+const SETTLE_DELAY_MS = 5000;        // delay between baud rate switches (longer = more reliable)
 
 /**
  * Installs a single stderr interceptor that:
@@ -93,6 +93,13 @@ function installStderrMonitor(onActivity: () => void): { cleanup: () => void } {
 }
 
 export async function scanPortExtended(portConfig: PortConfig): Promise<ExtendedScanResult> {
+  // Sort baud rates: configured rate first, then ascending
+  const baudRates = [...MBUS_BAUD_RATES].sort((a, b) => {
+    if (a === portConfig.baud_rate) return -1;
+    if (b === portConfig.baud_rate) return 1;
+    return a - b;
+  });
+
   const result: ExtendedScanResult = {
     port: portConfig.alias,
     port_path: portConfig.path,
@@ -102,7 +109,7 @@ export async function scanPortExtended(portConfig: PortConfig): Promise<Extended
 
   const seen = new Set<string>();
 
-  for (const baudRate of MBUS_BAUD_RATES) {
+  for (const baudRate of baudRates) {
     const conn = new MbusConnection(portConfig.path, baudRate, portConfig.alias);
     const startTime = Date.now();
     let busActivity = false;
@@ -126,23 +133,28 @@ export async function scanPortExtended(portConfig: PortConfig): Promise<Extended
       await conn.connect();
       console.log(`  ⏳ ${portConfig.alias} @${baudRate}: Scan (${INITIAL_TIMEOUT_MS / 1000}s, verlängert auf ${EXTENDED_TIMEOUT_MS / 1000}s bei Aktivität)...`);
 
-      // Use a scan loop that checks bus activity for dynamic timeout
+      // Dynamic timeout: use short timeout initially, extend if bus activity detected
       const devices = await new Promise<string[]>((resolve, reject) => {
+        let settled = false;
+        const done = (err: Error | null, ids?: string[]) => {
+          if (settled) return;
+          settled = true;
+          clearInterval(timeoutChecker);
+          if (err) reject(err);
+          else resolve(ids || []);
+        };
+
         const checkTimeout = () => {
           const elapsed = Date.now() - startTime;
           if (elapsed >= currentTimeout) {
-            reject(new Error(`Scan timeout on ${portConfig.alias} @${baudRate}`));
+            done(new Error(`Scan timeout on ${portConfig.alias} @${baudRate}`));
           }
         };
         const timeoutChecker = setInterval(checkTimeout, 1000);
 
-        conn.scanSecondary(EXTENDED_TIMEOUT_MS + 10000).then(ids => {
-          clearInterval(timeoutChecker);
-          resolve(ids);
-        }).catch(err => {
-          clearInterval(timeoutChecker);
-          reject(err);
-        });
+        conn.scanSecondary(EXTENDED_TIMEOUT_MS + 10000)
+          .then(ids => done(null, ids))
+          .catch(err => done(err));
       });
 
       clearInterval(progressInterval);
