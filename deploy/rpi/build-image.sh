@@ -70,7 +70,13 @@ apt-get update -qq
 apt-get install -y -qq git quilt parted qemu-user-static debootstrap \
   zerofree zip dosfstools libarchive-tools bc binfmt-support \
   file xxd rsync xz-utils kmod coreutils kpartx fdisk \
-  ca-certificates curl 2>&1 | tail -5
+  ca-certificates curl qemu-user-binfmt libcap2-bin pigz 2>&1 | tail -5
+
+# Ensure binfmt_misc is mounted and ARM handler is registered
+if [ ! -d /proc/sys/fs/binfmt_misc ]; then
+  mount binfmt_misc -t binfmt_misc /proc/sys/fs/binfmt_misc 2>/dev/null || true
+fi
+update-binfmts --enable qemu-arm 2>/dev/null || true
 
 echo "=== Cloning pi-gen ==="
 git clone --depth 1 https://github.com/RPi-Distro/pi-gen.git /pi-gen
