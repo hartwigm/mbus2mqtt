@@ -63,14 +63,15 @@ echo ""
 MSYS_NO_PATHCONV=1 docker run --rm --privileged \
   -v "$DOCKER_SCRIPT_DIR:/mbus2mqtt-rpi:ro" \
   -v "$DOCKER_OUTPUT_DIR:/output" \
-  debian:bookworm bash -c '
+  debian:trixie bash -c '
 set -e
 
 apt-get update -qq
-apt-get install -y -qq git quilt parted qemu-user-static debootstrap \
+DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+  git quilt parted qemu-user-static debootstrap \
   zerofree zip dosfstools libarchive-tools bc binfmt-support \
   file xxd rsync xz-utils kmod coreutils kpartx fdisk \
-  ca-certificates curl qemu-user-binfmt libcap2-bin pigz 2>&1 | tail -5
+  ca-certificates curl libcap2-bin pigz 2>&1 | tail -5
 
 # Ensure binfmt_misc is mounted and ARM handler is registered
 if [ ! -d /proc/sys/fs/binfmt_misc ]; then
