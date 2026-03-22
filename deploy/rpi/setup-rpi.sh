@@ -29,13 +29,24 @@ echo -e "${GREEN}=== mbus2mqtt Raspberry Pi Setup ===${NC}"
 echo "  Property: $PROPERTY"
 echo ""
 
-# Node.js 22 (Raspberry Pi OS ships with old node)
-echo "Installing Node.js 22..."
-if ! command -v node &>/dev/null || [ "$(node --version | cut -d. -f1 | tr -d v)" -lt 20 ]; then
-  curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
-  apt-get install -y nodejs
+# Node.js — detect architecture and install accordingly
+echo "Installing Node.js..."
+ARCH=$(dpkg --print-architecture)
+if ! command -v node &>/dev/null || [ "$(node --version | cut -d. -f1 | tr -d v)" -lt 18 ]; then
+  if [ "$ARCH" = "armhf" ]; then
+    # NodeSource doesn't support armhf — use official Node.js armv7l binary
+    NODE_VER="v22.14.0"
+    echo "  Architecture: armhf — installing Node.js $NODE_VER from nodejs.org..."
+    curl -fsSL "https://nodejs.org/dist/${NODE_VER}/node-${NODE_VER}-linux-armv7l.tar.xz" -o /tmp/node.tar.xz
+    tar -xJf /tmp/node.tar.xz -C /usr/local --strip-components=1
+    rm -f /tmp/node.tar.xz
+  else
+    # amd64/arm64 — use NodeSource
+    curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+    apt-get install -y nodejs
+  fi
 fi
-echo "  Node.js $(node --version)"
+echo "  Node.js $(node --version) ($(node -p process.arch))"
 
 # Build dependencies
 echo "Installing build dependencies..."

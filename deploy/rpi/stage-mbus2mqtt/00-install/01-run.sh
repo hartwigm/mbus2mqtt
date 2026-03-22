@@ -12,11 +12,11 @@ STATE_DIR="/var/lib/mbus2mqtt"
 
 echo "=== Installing mbus2mqtt ==="
 
-# Node.js from nodesource for armhf (bookworm has old node)
-if [ "$(node --version 2>/dev/null | cut -d. -f1 | tr -d v)" -lt 20 ] 2>/dev/null; then
-  curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
-  apt-get install -y nodejs
-fi
+# Node.js — official binary for armhf (NodeSource doesn't support armhf)
+NODE_VER="v22.14.0"
+curl -fsSL "https://nodejs.org/dist/${NODE_VER}/node-${NODE_VER}-linux-armv7l.tar.xz" -o /tmp/node.tar.xz
+tar -xJf /tmp/node.tar.xz -C /usr/local --strip-components=1
+rm -f /tmp/node.tar.xz
 
 # Clone and build
 git clone --depth 1 https://github.com/hartwigm/mbus2mqtt.git "$INSTALL_DIR"
