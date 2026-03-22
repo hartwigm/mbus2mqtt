@@ -8,6 +8,7 @@ import { cmdList } from './commands/list';
 import { cmdRead } from './commands/read';
 import { cmdRun } from './commands/run';
 import { cmdUpdate } from './commands/update';
+import { cmdSetup } from './commands/setup';
 
 const program = new Command();
 
@@ -58,6 +59,14 @@ program
   .description('Update mbus2mqtt from GitHub and restart service')
   .action(async () => {
     await cmdUpdate();
+  });
+
+program
+  .command('setup')
+  .description('USB-Adapter erkennen und Ports konfigurieren')
+  .action(async () => {
+    const configPath = program.opts().config || '/opt/mbus2mqtt/config/config.yaml';
+    await cmdSetup(configPath);
   });
 
 program.parse();

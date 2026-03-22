@@ -17,7 +17,7 @@ ports:
   - path: "/dev/serial/by-id/usb-FTDI_FT232R_USB_UART_AQ03MP6X-if00-port0"
     alias: "usb0"
     baud_rate: 2400
-  - path: "/dev/serial/by-id/usb-FTDI_FT232R_USB_UART_AQ02BUNM-if00-port0"
+  - path: "/dev/serial/by-id/usb-Prolific_Technology_Inc._USB-Serial_Controller_DTEAt114J20-if00-port0"
     alias: "usb1"
     baud_rate: 9600
 
