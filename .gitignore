@@ -3,3 +3,5 @@ dist/
 *.log
 state.json
 deploy_remote.py
+deploy/rpi/pi-gen/
+deploy/rpi/output/

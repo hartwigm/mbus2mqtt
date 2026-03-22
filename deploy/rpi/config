@@ -1,0 +1,11 @@
+IMG_NAME=mbus2mqtt
+RELEASE=bookworm
+TARGET_HOSTNAME=mbus2mqtt
+FIRST_USER_NAME=mbus2mqtt
+FIRST_USER_PASSWD=mbus2mqtt
+ENABLE_SSH=1
+LOCALE_DEFAULT=de_DE.UTF-8
+TIMEZONE_DEFAULT=Europe/Berlin
+KEYBOARD_KEYMAP=de
+KEYBOARD_LAYOUT="German"
+STAGE_LIST="stage0 stage1 stage2 stage-mbus2mqtt"
