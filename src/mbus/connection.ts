@@ -130,19 +130,31 @@ export class MbusConnection {
    * If stderr activity (e.g. mbus_serial_recv_frame) is detected,
    * the timeout extends to extendedTimeoutMs since bus activity means
    * devices are present and the scan needs more time.
+   *
+   * Returns { devices, busActivity, restoreStderr } — caller MUST call
+   * restoreStderr() after forceClose + settle delay to suppress leftover
+   * native library output.
    */
-  async scanSecondaryDynamic(initialTimeoutMs: number, extendedTimeoutMs: number): Promise<string[]> {
+  async scanSecondaryDynamic(initialTimeoutMs: number, extendedTimeoutMs: number): Promise<{ devices: string[]; busActivity: boolean; restoreStderr: () => void }> {
     if (!this.master) throw new Error(`Not connected to ${this.alias}`);
 
     return new Promise((resolve, reject) => {
       let busActivity = false;
       let timer: NodeJS.Timeout;
+      let settled = false;
 
       // Intercept stderr to detect native libmbus output
       const origStderrWrite = process.stderr.write.bind(process.stderr);
+      const restoreStderr = () => {
+        if (!settled) {
+          settled = true;
+          process.stderr.write = origStderrWrite;
+        }
+      };
+
       const stderrHook = (chunk: any, ...args: any[]): boolean => {
         const str = typeof chunk === 'string' ? chunk : chunk.toString();
-        if (str.includes('mbus_serial_recv_frame')) {
+        if (str.includes('mbus_serial_recv_frame') || str.includes('mbus_serial')) {
           if (!busActivity) {
             busActivity = true;
             // Extend timeout — activity detected on bus
@@ -152,7 +164,7 @@ export class MbusConnection {
             }, extendedTimeoutMs);
             process.stdout.write(`\n  📡 ${this.alias} @${this.baudRate}: Bus-Aktivität erkannt — Timeout auf ${extendedTimeoutMs / 1000}s verlängert\n`);
           }
-          // Suppress native mbus_serial_recv_frame output
+          // Suppress native mbus output
           return true;
         }
         return origStderrWrite(chunk, ...args);
@@ -161,15 +173,14 @@ export class MbusConnection {
       process.stderr.write = stderrHook as any;
 
       timer = setTimeout(() => {
-        process.stderr.write = origStderrWrite;
+        // Don't restore stderr here — caller does it after settle delay
         reject(new Error(`Scan timeout on ${this.alias} @${this.baudRate}`));
       }, initialTimeoutMs);
 
       this.master!.scanSecondary((err, ids) => {
         clearTimeout(timer);
-        process.stderr.write = origStderrWrite;
         if (err) reject(err);
-        else resolve(ids);
+        else resolve({ devices: ids, busActivity, restoreStderr });
       });
     });
   }

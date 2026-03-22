@@ -61,7 +61,7 @@ export async function scanAllPorts(ports: PortConfig[]): Promise<ScanResult[]> {
 
 const INITIAL_TIMEOUT_MS = 120000;   // 2 min — no activity = skip
 const EXTENDED_TIMEOUT_MS = 600000;  // 10 min — bus activity detected, full scan
-const SETTLE_DELAY_MS = 2000;        // delay between baud rate switches
+const SETTLE_DELAY_MS = 3000;        // delay between baud rate switches
 
 export async function scanPortExtended(portConfig: PortConfig): Promise<ExtendedScanResult> {
   const result: ExtendedScanResult = {
@@ -72,54 +72,76 @@ export async function scanPortExtended(portConfig: PortConfig): Promise<Extended
   };
 
   const seen = new Set<string>();
-
-  for (const baudRate of MBUS_BAUD_RATES) {
-    const conn = new MbusConnection(portConfig.path, baudRate, portConfig.alias);
-    const startTime = Date.now();
-
-    const progressInterval = setInterval(() => {
-      const elapsed = Math.round((Date.now() - startTime) / 1000);
-      process.stdout.write(`\r  ⏳ ${portConfig.alias} @${baudRate}: Scan läuft... ${elapsed}s   `);
-    }, 3000);
-
-    try {
-      console.log(`\n  🔌 ${portConfig.alias}: Teste ${baudRate} baud...`);
-      await conn.connect();
-      console.log(`  ⏳ ${portConfig.alias} @${baudRate}: Scan gestartet (${INITIAL_TIMEOUT_MS / 1000}s, verlängert auf ${EXTENDED_TIMEOUT_MS / 1000}s bei Aktivität)...`);
-      const devices = await conn.scanSecondaryDynamic(INITIAL_TIMEOUT_MS, EXTENDED_TIMEOUT_MS);
-      clearInterval(progressInterval);
-      const elapsed = Math.round((Date.now() - startTime) / 1000);
-
-      const newDevices = devices.filter(id => !seen.has(id));
-      for (const id of devices) seen.add(id);
-
-      if (devices.length > 0) {
-        process.stdout.write(`\r  ✅ ${portConfig.alias} @${baudRate}: ${devices.length} Gerät(e) gefunden nach ${elapsed}s`);
-        if (newDevices.length < devices.length) {
-          process.stdout.write(` (${newDevices.length} neu)`);
-        }
-        process.stdout.write('\n');
-        for (const id of devices) {
-          const isNew = newDevices.includes(id);
-          console.log(`     ${isNew ? '🆕' : '  '} ${id}`);
-          if (isNew) {
-            result.devices.push({ secondary_address: id, baud_rate: baudRate });
-          }
-        }
-      } else {
-        process.stdout.write(`\r  ⚪ ${portConfig.alias} @${baudRate}: Keine Geräte (${elapsed}s)\n`);
-      }
-    } catch (err) {
-      clearInterval(progressInterval);
-      const elapsed = Math.round((Date.now() - startTime) / 1000);
-      const message = err instanceof Error ? err.message : String(err);
-      process.stdout.write(`\r  ⚠️  ${portConfig.alias} @${baudRate}: Timeout nach ${elapsed}s — weiter mit nächster Baudrate\n`);
-      result.errors.push({ baud_rate: baudRate, error: message });
+  // Global stderr suppressor for mbus native output between scans
+  const origStderrWrite = process.stderr.write.bind(process.stderr);
+  let suppressStderr = false;
+  const stderrGuard = (chunk: any, ...args: any[]): boolean => {
+    const str = typeof chunk === 'string' ? chunk : chunk.toString();
+    if (suppressStderr && (str.includes('mbus_serial') || str.includes('mbus_frame'))) {
+      return true; // suppress
     }
+    return origStderrWrite(chunk, ...args);
+  };
+  process.stderr.write = stderrGuard as any;
 
-    // Always force-close and wait before next baud rate to reset serial state
-    await conn.forceClose();
-    await new Promise(r => setTimeout(r, SETTLE_DELAY_MS));
+  try {
+    for (const baudRate of MBUS_BAUD_RATES) {
+      const conn = new MbusConnection(portConfig.path, baudRate, portConfig.alias);
+      const startTime = Date.now();
+      let restoreStderr: (() => void) | null = null;
+
+      const progressInterval = setInterval(() => {
+        const elapsed = Math.round((Date.now() - startTime) / 1000);
+        process.stdout.write(`\r  ⏳ ${portConfig.alias} @${baudRate}: Scan läuft... ${elapsed}s   `);
+      }, 3000);
+
+      try {
+        console.log(`\n  🔌 ${portConfig.alias}: Teste ${baudRate} baud...`);
+        await conn.connect();
+        console.log(`  ⏳ ${portConfig.alias} @${baudRate}: Scan (${INITIAL_TIMEOUT_MS / 1000}s, +${EXTENDED_TIMEOUT_MS / 1000}s bei Aktivität)...`);
+        const scanResult = await conn.scanSecondaryDynamic(INITIAL_TIMEOUT_MS, EXTENDED_TIMEOUT_MS);
+        restoreStderr = scanResult.restoreStderr;
+        clearInterval(progressInterval);
+        const elapsed = Math.round((Date.now() - startTime) / 1000);
+        const devices = scanResult.devices;
+
+        const newDevices = devices.filter(id => !seen.has(id));
+        for (const id of devices) seen.add(id);
+
+        if (devices.length > 0) {
+          process.stdout.write(`\r  ✅ ${portConfig.alias} @${baudRate}: ${devices.length} Gerät(e) gefunden nach ${elapsed}s`);
+          if (newDevices.length < devices.length) {
+            process.stdout.write(` (${newDevices.length} neu)`);
+          }
+          process.stdout.write('\n');
+          for (const id of devices) {
+            const isNew = newDevices.includes(id);
+            console.log(`     ${isNew ? '🆕' : '  '} ${id}`);
+            if (isNew) {
+              result.devices.push({ secondary_address: id, baud_rate: baudRate });
+            }
+          }
+        } else {
+          process.stdout.write(`\r  ⚪ ${portConfig.alias} @${baudRate}: Keine Geräte (${elapsed}s)\n`);
+        }
+      } catch (err) {
+        clearInterval(progressInterval);
+        const elapsed = Math.round((Date.now() - startTime) / 1000);
+        const message = err instanceof Error ? err.message : String(err);
+        process.stdout.write(`\r  ⚠️  ${portConfig.alias} @${baudRate}: Timeout nach ${elapsed}s — weiter\n`);
+        result.errors.push({ baud_rate: baudRate, error: message });
+      }
+
+      // Suppress stderr during close + settle to catch leftover native output
+      suppressStderr = true;
+      await conn.forceClose();
+      await new Promise(r => setTimeout(r, SETTLE_DELAY_MS));
+      if (restoreStderr) restoreStderr();
+      suppressStderr = false;
+    }
+  } finally {
+    // Always restore original stderr
+    process.stderr.write = origStderrWrite;
   }
 
   return result;
