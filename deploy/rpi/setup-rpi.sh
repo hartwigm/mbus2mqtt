@@ -119,11 +119,11 @@ hostnamectl set-hostname "mbus2mqtt-${PROPERTY,,}" 2>/dev/null || true
 # Timezone
 timedatectl set-timezone Europe/Berlin 2>/dev/null || true
 
-# Clean up build tools
+# Clean up build tools (keep python3 — system depends on it)
 echo "Cleaning up..."
 rm -rf "$INSTALL_DIR/.git" "$INSTALL_DIR/src" "$INSTALL_DIR/tsconfig.json"
 rm -rf /root/.npm /tmp/npm-*
-apt-get purge -y git python3 make g++
+apt-get purge -y git make g++
 apt-get autoremove -y
 apt-get clean
 

@@ -72,7 +72,7 @@ MOTDEOF
 # Clean up build artifacts
 rm -rf "$INSTALL_DIR/.git" "$INSTALL_DIR/src" "$INSTALL_DIR/tsconfig.json"
 rm -rf /root/.npm /tmp/*
-apt-get purge -y git python3 make g++
+apt-get purge -y git make g++
 apt-get autoremove -y
 apt-get clean
 
