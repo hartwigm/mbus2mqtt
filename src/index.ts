@@ -9,6 +9,7 @@ import { cmdRead } from './commands/read';
 import { cmdRun } from './commands/run';
 import { cmdUpdate } from './commands/update';
 import { cmdSetup } from './commands/setup';
+import { cmdTestMqtt } from './commands/test-mqtt';
 
 const program = new Command();
 
@@ -71,6 +72,15 @@ program
   .action(async () => {
     const configPath = program.opts().config || '/opt/mbus2mqtt/config/config.yaml';
     await cmdSetup(configPath);
+  });
+
+program
+  .command('test-mqtt')
+  .description('Alle Zähler lesen und sofort per MQTT senden (Diagnose)')
+  .action(async () => {
+    const config = loadConfig(program.opts().config);
+    initLogger(config.logging.level, config.logging.file);
+    await cmdTestMqtt(config);
   });
 
 program
