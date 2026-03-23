@@ -1,6 +1,6 @@
 #!/bin/sh
 #
-# mbus2mqtt update script (Alpine LXC)
+# mbus2mqtt update script (Alpine LXC + Raspberry Pi / Debian)
 # Downloads latest release from GitHub, rebuilds, and restarts the service.
 #
 # Usage: sh /opt/mbus2mqtt/deploy/update.sh
@@ -15,6 +15,21 @@ TARBALL_URL="${REPO_URL}/archive/refs/heads/${BRANCH}.tar.gz"
 GREEN='\033[0;32m'
 RED='\033[0;31m'
 NC='\033[0m'
+
+# Detect package manager and service manager
+if command -v apk >/dev/null 2>&1; then
+  PKG_MGR="apk"
+elif command -v apt-get >/dev/null 2>&1; then
+  PKG_MGR="apt"
+else
+  PKG_MGR="none"
+fi
+
+if [ -d /run/systemd/system ]; then
+  SVC_MGR="systemd"
+else
+  SVC_MGR="openrc"
+fi
 
 echo -e "${GREEN}=== mbus2mqtt update ===${NC}"
 
@@ -34,22 +49,31 @@ wget -qO "$TMP_DIR/source.tar.gz" "$TARBALL_URL"
 tar -xzf "$TMP_DIR/source.tar.gz" -C "$TMP_DIR"
 SRC_DIR="$TMP_DIR/mbus2mqtt-${BRANCH}"
 
-# Install build dependencies if needed
-BUILD_DEPS_INSTALLED=false
+# Check Node.js
 if ! command -v node >/dev/null 2>&1; then
   echo -e "${RED}Error: Node.js not installed${NC}"
   exit 1
 fi
 
+# Install build dependencies if needed
+BUILD_DEPS_INSTALLED=false
 if ! command -v make >/dev/null 2>&1; then
   echo "Installing build dependencies..."
-  apk add -q --virtual .build-deps python3 make g++ linux-headers
+  if [ "$PKG_MGR" = "apk" ]; then
+    apk add -q --virtual .build-deps python3 make g++ linux-headers
+  elif [ "$PKG_MGR" = "apt" ]; then
+    apt-get update -qq && apt-get install -y -qq make g++
+  fi
   BUILD_DEPS_INSTALLED=true
 fi
 
 # Stop service before updating
 echo "Stopping service..."
-rc-service mbus2mqtt stop 2>/dev/null || true
+if [ "$SVC_MGR" = "systemd" ]; then
+  systemctl stop mbus2mqtt 2>/dev/null || true
+else
+  rc-service mbus2mqtt stop 2>/dev/null || true
+fi
 
 # Update source files (preserve config and state)
 echo "Updating files..."
@@ -77,21 +101,29 @@ fi
 # Clean up build dependencies
 if [ "$BUILD_DEPS_INSTALLED" = true ]; then
   echo "Removing build dependencies..."
-  apk del -q .build-deps
+  if [ "$PKG_MGR" = "apk" ]; then
+    apk del -q .build-deps
+  elif [ "$PKG_MGR" = "apt" ]; then
+    apt-get purge -y -qq make g++ && apt-get autoremove -y -qq
+  fi
 fi
 
-# Update MOTD from deploy files
-if [ -f "$INSTALL_DIR/deploy/create-lxc.sh" ]; then
+# Update MOTD
+if [ -f "$INSTALL_DIR/deploy/create-lxc.sh" ] && [ "$SVC_MGR" = "openrc" ]; then
   sed -n '/cat > \/etc\/motd/,/MOTDEOF/p' "$INSTALL_DIR/deploy/create-lxc.sh" \
     | grep -v 'cat > /etc/motd' | grep -v 'MOTDEOF' > /etc/motd
 fi
 
 # Clean up dev files
-rm -rf "$INSTALL_DIR/src" "$INSTALL_DIR/tsconfig.json" /root/.npm /tmp/*
+rm -rf "$INSTALL_DIR/src" "$INSTALL_DIR/tsconfig.json" /root/.npm /tmp/npm-*
 
 # Start service
 echo "Starting service..."
-rc-service mbus2mqtt start
+if [ "$SVC_MGR" = "systemd" ]; then
+  systemctl start mbus2mqtt 2>/dev/null || true
+else
+  rc-service mbus2mqtt start
+fi
 
 echo ""
 if [ -n "$OLD_COMMIT" ] && [ -n "$NEW_COMMIT" ]; then
@@ -100,4 +132,8 @@ else
   echo -e "${GREEN}=== Update complete ===${NC}"
 fi
 echo ""
-echo "  Check logs: tail -f /var/log/mbus2mqtt.log"
+if [ "$SVC_MGR" = "systemd" ]; then
+  echo "  Check logs: journalctl -u mbus2mqtt -f"
+else
+  echo "  Check logs: tail -f /var/log/mbus2mqtt.log"
+fi
