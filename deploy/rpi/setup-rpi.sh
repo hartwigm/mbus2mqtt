@@ -48,6 +48,11 @@ if ! command -v node &>/dev/null || [ "$(node --version | cut -d. -f1 | tr -d v)
 fi
 echo "  Node.js $(node --version) ($(node -p process.arch))"
 
+# Update npm to latest
+echo "Updating npm..."
+npm install -g npm@latest --loglevel=warn
+echo "  npm $(npm --version)"
+
 # Build dependencies
 echo "Installing build dependencies..."
 apt-get install -y git python3 make g++
