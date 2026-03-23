@@ -73,4 +73,22 @@ program
     await cmdSetup(configPath);
   });
 
+program
+  .command('restart')
+  .description('Dienst neu starten')
+  .action(async () => {
+    const { execSync } = require('child_process');
+    const fs = require('fs');
+    try {
+      if (fs.existsSync('/run/systemd/system')) {
+        execSync('systemctl restart mbus2mqtt', { stdio: 'inherit' });
+      } else {
+        execSync('rc-service mbus2mqtt restart', { stdio: 'inherit' });
+      }
+      console.log('  ✅ mbus2mqtt neu gestartet');
+    } catch {
+      console.log('  ❌ Neustart fehlgeschlagen — evtl. sudo nötig?');
+    }
+  });
+
 program.parse();
