@@ -23,10 +23,12 @@ program
   .description('Scan all configured ports for M-Bus devices')
   .option('-e, --extended', 'Alle Baudraten testen (300–921600)')
   .option('-p, --port <alias>', 'Nur diesen Port scannen (z.B. usb0, usb1)')
+  .option('-a, --add', 'Gefundene Geräte automatisch in Config aufnehmen')
   .action(async (opts) => {
-    const config = loadConfig(program.opts().config);
+    const configPath = program.opts().config;
+    const config = loadConfig(configPath);
     initLogger(config.logging.level, config.logging.file);
-    await cmdScan(config, opts.extended || false, opts.port);
+    await cmdScan(config, opts.extended || false, opts.port, opts.add || false, configPath);
   });
 
 program

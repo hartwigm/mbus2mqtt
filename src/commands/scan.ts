@@ -1,7 +1,11 @@
-import { Config } from '../types';
+import * as fs from 'fs';
+import * as yaml from 'js-yaml';
+import { Config, DeviceConfig } from '../types';
 import { scanAllPorts, scanAllPortsExtended, MBUS_BAUD_RATES } from '../mbus/scanner';
 
-export async function cmdScan(config: Config, extended: boolean, portFilter?: string): Promise<void> {
+const CONFIG_PATHS = ['/etc/mbus2mqtt/config.yaml', './config.yaml'];
+
+export async function cmdScan(config: Config, extended: boolean, portFilter?: string, autoAdd?: boolean, configPathOpt?: string): Promise<void> {
   const ports = portFilter
     ? config.ports.filter(p => p.alias === portFilter)
     : config.ports;
@@ -24,6 +28,8 @@ export async function cmdScan(config: Config, extended: boolean, portFilter?: st
   console.log(`\n  ${'═'.repeat(50)}`);
   console.log('  Ergebnisse:\n');
 
+  const newDevices: DeviceConfig[] = [];
+
   for (const result of results) {
     console.log(`  Port: ${result.port} (@${result.baud_rate} baud)`);
     console.log(`  ${'─'.repeat(50)}`);
@@ -34,11 +40,33 @@ export async function cmdScan(config: Config, extended: boolean, portFilter?: st
     } else {
       for (const id of result.devices) {
         const configured = config.devices.find(d => d.secondary_address === id);
-        const status = configured ? `  ✓ ${configured.name}` : '  (nicht konfiguriert)';
-        console.log(`  ${id}${status}`);
+        if (configured) {
+          console.log(`  ${id}  ✓ ${configured.name}`);
+        } else {
+          console.log(`  ${id}  + neu`);
+          // Extract short ID from secondary address for default name
+          const shortId = id.substring(0, 8);
+          newDevices.push({
+            secondary_address: id,
+            port: result.port,
+            name: `WZ ${shortId}`,
+            medium: 'water',
+          });
+        }
       }
     }
     console.log(`  Gefunden: ${result.devices.length} Gerät(e)\n`);
+  }
+
+  // Auto-add new devices to config
+  if (newDevices.length > 0) {
+    if (autoAdd) {
+      addDevicesToConfig(config, newDevices, configPathOpt);
+    } else {
+      console.log(`  ${newDevices.length} neue(s) Gerät(e) gefunden.`);
+      console.log(`  Erneut mit --add ausführen um sie zur Config hinzuzufügen:\n`);
+      console.log(`    m2q scan --add\n`);
+    }
   }
 }
 
@@ -95,4 +123,41 @@ async function cmdScanExtended(config: Config, ports: typeof config.ports): Prom
       }
     }
   }
+}
+
+function addDevicesToConfig(config: Config, newDevices: DeviceConfig[], configPathOpt?: string): void {
+  // Find config file
+  const candidates = configPathOpt ? [configPathOpt] : CONFIG_PATHS;
+  const configPath = candidates.find(p => fs.existsSync(p));
+  if (!configPath) {
+    console.log('  ❌ Config-Datei nicht gefunden.\n');
+    return;
+  }
+
+  const raw = fs.readFileSync(configPath, 'utf-8');
+  const cfg = yaml.load(raw) as Record<string, unknown>;
+  const devices = (cfg.devices as unknown[]) || [];
+
+  for (const dev of newDevices) {
+    devices.push({
+      secondary_address: dev.secondary_address,
+      port: dev.port,
+      name: dev.name,
+      medium: dev.medium,
+    });
+    console.log(`  ✅ ${dev.secondary_address} → ${dev.name} (${dev.port})`);
+  }
+
+  cfg.devices = devices;
+  const updated = yaml.dump(cfg, { lineWidth: 120, noRefs: true });
+  fs.writeFileSync(configPath, updated, 'utf-8');
+
+  const svcMgr = fs.existsSync('/run/systemd/system') ? 'systemd' : 'openrc';
+  const restartCmd = svcMgr === 'systemd'
+    ? 'sudo systemctl restart mbus2mqtt'
+    : 'rc-service mbus2mqtt restart';
+
+  console.log(`\n  ${newDevices.length} Gerät(e) zur Config hinzugefügt: ${configPath}`);
+  console.log(`  Medium: water (Standard) — bei Bedarf in Config anpassen.`);
+  console.log(`  Neustart: ${restartCmd}\n`);
 }
