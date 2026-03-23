@@ -26,9 +26,8 @@ function validate(cfg: Partial<Config>, filePath: string): Config {
   if (!cfg.property) throw new Error(`config: 'property' is required`);
   if (!cfg.mqtt?.broker) throw new Error(`config: 'mqtt.broker' is required`);
   if (!cfg.ports?.length) throw new Error(`config: at least one port is required`);
-  if (!cfg.devices?.length) throw new Error(`config: at least one device is required`);
 
-  for (const dev of cfg.devices!) {
+  for (const dev of cfg.devices || []) {
     const port = cfg.ports!.find(p => p.alias === dev.port);
     if (!port) {
       throw new Error(`config: device ${dev.secondary_address} references unknown port '${dev.port}'`);
@@ -44,7 +43,7 @@ function validate(cfg: Partial<Config>, filePath: string): Config {
       client_id: cfg.mqtt!.client_id || `mbus2mqtt-${cfg.property}`,
     },
     ports: cfg.ports!,
-    devices: cfg.devices!,
+    devices: cfg.devices || [],
     read_interval_minutes: cfg.read_interval_minutes || 15,
     logging: {
       level: cfg.logging?.level || 'info',

@@ -21,7 +21,6 @@ function detectUsbAdapters(): DetectedAdapter[] {
   const entries = fs.readdirSync(SERIAL_BY_ID_PATH);
   return entries.map(name => {
     const fullPath = path.join(SERIAL_BY_ID_PATH, name);
-    // Extract chip type from name
     let chip = 'Unbekannt';
     if (name.includes('FTDI')) chip = 'FTDI';
     else if (name.includes('Prolific')) chip = 'Prolific';
@@ -45,6 +44,11 @@ async function tryConnect(adapterPath: string, baudRate: number, alias: string):
   } catch {
     return false;
   }
+}
+
+function detectServiceManager(): 'systemd' | 'openrc' {
+  if (fs.existsSync('/run/systemd/system')) return 'systemd';
+  return 'openrc';
 }
 
 export async function cmdSetup(configPath?: string): Promise<void> {
@@ -117,45 +121,82 @@ export async function cmdSetup(configPath?: string): Promise<void> {
     portConfigs.push({ path: a.path, alias, baud_rate: a.baudRate });
   }
 
-  // Step 4: Ask to update config
-  const targetPath = configPath || '/opt/mbus2mqtt/config/config.yaml';
+  // Step 4: Ask for property name
+  const targetPath = configPath || '/etc/mbus2mqtt/config.yaml';
   console.log(`\n  ${'─'.repeat(50)}`);
-  const answer = await ask(rl, `  Config aktualisieren? (${targetPath}) [j/N] `);
+
+  // Read existing config for defaults
+  let existingProperty = '';
+  let existingMqtt: Record<string, unknown> = {};
+  if (fs.existsSync(targetPath)) {
+    try {
+      const raw = fs.readFileSync(targetPath, 'utf-8');
+      const cfg = yaml.load(raw) as Record<string, unknown>;
+      existingProperty = (cfg.property as string) || '';
+      existingMqtt = (cfg.mqtt as Record<string, unknown>) || {};
+    } catch { /* ignore */ }
+  }
+
+  const propertyDefault = existingProperty || 'M47';
+  const property = (await ask(rl, `  Property-Name [${propertyDefault}]: `)).trim() || propertyDefault;
+
+  // Step 5: Ask for MQTT config
+  const mqttBrokerDefault = (existingMqtt.broker as string) || 'mqtt://localhost:1883';
+  const mqttBroker = (await ask(rl, `  MQTT Broker [${mqttBrokerDefault}]: `)).trim() || mqttBrokerDefault;
+
+  const mqttUserDefault = (existingMqtt.username as string) || 'mbus2mqtt';
+  const mqttUser = (await ask(rl, `  MQTT User [${mqttUserDefault}]: `)).trim() || mqttUserDefault;
+
+  const mqttPassDefault = (existingMqtt.password as string) || 'changeme';
+  const mqttPass = (await ask(rl, `  MQTT Passwort [${mqttPassDefault}]: `)).trim() || mqttPassDefault;
+
+  // Step 6: Write fresh config
+  const answer = await ask(rl, `\n  Config schreiben? (${targetPath}) [j/N] `);
 
   if (answer.toLowerCase() !== 'j' && answer.toLowerCase() !== 'y') {
-    console.log('\n  Abgebrochen. Port-Konfiguration zum manuellen Einfügen:\n');
-    console.log('  ports:');
-    for (const p of portConfigs) {
-      console.log(`    - path: "${p.path}"`);
-      console.log(`      alias: "${p.alias}"`);
-      console.log(`      baud_rate: ${p.baud_rate}`);
-    }
-    console.log('');
+    console.log('\n  Abgebrochen.\n');
     rl.close();
     return;
   }
 
-  // Step 5: Update config file
-  if (fs.existsSync(targetPath)) {
-    const raw = fs.readFileSync(targetPath, 'utf-8');
-    const cfg = yaml.load(raw) as Record<string, unknown>;
-    cfg.ports = portConfigs;
-    const updated = yaml.dump(cfg, { lineWidth: 120, noRefs: true });
-    fs.writeFileSync(targetPath, updated, 'utf-8');
-    console.log(`\n  ✅ Ports in ${targetPath} aktualisiert.`);
-    console.log('  ⚠️  Prüfe ob die Device-Zuordnung (port: usbX) noch stimmt!');
-    console.log('  Neustart: rc-service mbus2mqtt restart\n');
-  } else {
-    console.log(`\n  ❌ Config-Datei nicht gefunden: ${targetPath}`);
-    console.log('  Port-Konfiguration zum manuellen Einfügen:\n');
-    console.log('  ports:');
-    for (const p of portConfigs) {
-      console.log(`    - path: "${p.path}"`);
-      console.log(`      alias: "${p.alias}"`);
-      console.log(`      baud_rate: ${p.baud_rate}`);
-    }
-    console.log('');
+  const newConfig = {
+    property,
+    mqtt: {
+      broker: mqttBroker,
+      username: mqttUser,
+      password: mqttPass,
+      client_id: `mbus2mqtt-${property}`,
+    },
+    read_interval_minutes: 15,
+    ports: portConfigs,
+    devices: [] as unknown[],
+    logging: {
+      level: 'info',
+      file: '/var/log/mbus2mqtt.log',
+    },
+    state_file: '/var/lib/mbus2mqtt/state.json',
+  };
+
+  // Ensure config directory exists
+  const configDir = path.dirname(targetPath);
+  if (!fs.existsSync(configDir)) {
+    fs.mkdirSync(configDir, { recursive: true });
   }
+
+  const configYaml = yaml.dump(newConfig, { lineWidth: 120, noRefs: true });
+  fs.writeFileSync(targetPath, configYaml, 'utf-8');
+
+  const svcMgr = detectServiceManager();
+  const restartCmd = svcMgr === 'systemd'
+    ? 'sudo systemctl restart mbus2mqtt'
+    : 'rc-service mbus2mqtt restart';
+
+  console.log(`\n  ✅ Config geschrieben: ${targetPath}`);
+  console.log(`\n  Nächste Schritte:`);
+  console.log(`  1. m2q scan              Geräte auf dem Bus finden`);
+  console.log(`  2. Config bearbeiten     Gefundene Geräte eintragen`);
+  console.log(`  3. ${restartCmd}`);
+  console.log('');
 
   rl.close();
 }
