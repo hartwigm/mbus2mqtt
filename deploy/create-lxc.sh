@@ -167,6 +167,7 @@ ALIASEOF
   │  mbus2mqtt - M-Bus to MQTT Gateway              │
   ├──────────────────────────────────────────────────┤
   │                                                  │
+  │  m2q setup           Detect USB adapters          │
   │  m2q scan            Scan ports for meters       │
   │  m2q list            Show meters & values        │
   │  m2q read <id>       Read single meter           │
@@ -196,4 +197,4 @@ echo "  IP:        $CTIP"
 echo "  OS:        Alpine Linux (~${MEMORY}MB RAM, ${DISK}GB disk)"
 echo ""
 echo "  Login:     pct enter $CTID"
-echo "  Then type: m2q scan"
+echo "  Then type: m2q setup"
