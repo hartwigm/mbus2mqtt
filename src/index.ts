@@ -84,6 +84,27 @@ program
   });
 
 program
+  .command('config')
+  .description('Config-Datei im Editor öffnen')
+  .action(async () => {
+    const fs = require('fs');
+    const { execSync } = require('child_process');
+    const configPath = program.opts().config;
+    const paths = configPath ? [configPath] : ['/etc/mbus2mqtt/config.yaml', './config.yaml'];
+    const found = paths.find((p: string) => fs.existsSync(p));
+    if (!found) {
+      console.log(`  ❌ Config nicht gefunden. Gesucht: ${paths.join(', ')}`);
+      return;
+    }
+    const editor = process.env.EDITOR || process.env.VISUAL || 'nano';
+    try {
+      execSync(`${editor} ${found}`, { stdio: 'inherit' });
+    } catch {
+      console.log(`  ❌ Editor "${editor}" konnte nicht gestartet werden`);
+    }
+  });
+
+program
   .command('restart')
   .description('Dienst neu starten')
   .action(async () => {

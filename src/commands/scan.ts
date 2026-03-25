@@ -2,6 +2,49 @@ import * as fs from 'fs';
 import * as yaml from 'js-yaml';
 import { Config, DeviceConfig } from '../types';
 import { scanAllPorts, scanAllPortsExtended, MBUS_BAUD_RATES } from '../mbus/scanner';
+import { MbusConnection } from '../mbus/connection';
+
+// M-Bus medium codes (EN 13757-3, last byte of secondary address)
+const MEDIUM_MAP: Record<number, { medium: DeviceConfig['medium']; prefix: string }> = {
+  0x02: { medium: 'electricity', prefix: 'EZ' },
+  0x03: { medium: 'gas', prefix: 'GZ' },
+  0x04: { medium: 'heat', prefix: 'WMZ' },
+  0x06: { medium: 'warm_water', prefix: 'WWZ' },
+  0x07: { medium: 'water', prefix: 'WZ' },
+  0x0C: { medium: 'heat', prefix: 'WMZ' },
+  0x0D: { medium: 'heat', prefix: 'WMZ' },
+};
+
+// Unit strings from node-mbus that carry a multiplier
+const UNIT_FACTOR_MAP: Record<string, { factor: number; unit: string }> = {
+  'Energy (10 Wh)': { factor: 10, unit: 'Wh' },
+  'Energy (100 Wh)': { factor: 100, unit: 'Wh' },
+  'Energy (Wh)': { factor: 1, unit: 'Wh' },
+  'Energy (kWh)': { factor: 1, unit: 'kWh' },
+  'Energy (MWh)': { factor: 1, unit: 'MWh' },
+  'Energy (J)': { factor: 1, unit: 'J' },
+  'Energy (kJ)': { factor: 1, unit: 'kJ' },
+  'Energy (10 kJ)': { factor: 10, unit: 'kJ' },
+  'Energy (100 kJ)': { factor: 100, unit: 'kJ' },
+  'Volume (m m^3)': { factor: 1, unit: 'm³' },
+  'Volume (m^3)': { factor: 1, unit: 'm³' },
+  'Volume (1e-1  m^3)': { factor: 0.1, unit: 'm³' },
+  'Volume (1e-2  m^3)': { factor: 0.01, unit: 'm³' },
+  'Volume (1e-3  m^3)': { factor: 0.001, unit: 'm³' },
+  'Volume (10 m^3)': { factor: 10, unit: 'm³' },
+  'Volume (100 m^3)': { factor: 100, unit: 'm³' },
+};
+
+function parseMediumFromAddress(secondaryAddress: string): { medium: DeviceConfig['medium']; prefix: string } {
+  // Secondary address format: 8 chars ID + 4 chars Manufacturer + 2 chars Version + 2 chars Medium
+  if (secondaryAddress.length >= 16) {
+    const mediumByte = parseInt(secondaryAddress.substring(14, 16), 16);
+    if (MEDIUM_MAP[mediumByte]) {
+      return MEDIUM_MAP[mediumByte];
+    }
+  }
+  return { medium: 'water', prefix: 'WZ' };
+}
 
 const CONFIG_PATHS = ['/etc/mbus2mqtt/config.yaml', './config.yaml'];
 
@@ -43,14 +86,15 @@ export async function cmdScan(config: Config, extended: boolean, portFilter?: st
         if (configured) {
           console.log(`  ${id}  ✓ ${configured.name}`);
         } else {
-          console.log(`  ${id}  + neu`);
-          // Extract short ID from secondary address for default name
+          const { medium, prefix } = parseMediumFromAddress(id);
           const shortId = id.substring(0, 8);
+          console.log(`  ${id}  + neu (${medium})`);
           newDevices.push({
             secondary_address: id,
             port: result.port,
-            name: `WZ ${shortId}`,
-            medium: 'water',
+            name: `${prefix} ${shortId}`,
+            medium,
+            value_factor: 1,
           });
         }
       }
@@ -61,7 +105,7 @@ export async function cmdScan(config: Config, extended: boolean, portFilter?: st
   // Auto-add new devices to config
   if (newDevices.length > 0) {
     if (autoAdd) {
-      addDevicesToConfig(config, newDevices, configPathOpt);
+      await addDevicesToConfig(config, newDevices, configPathOpt);
     } else {
       console.log(`  ${newDevices.length} neue(s) Gerät(e) gefunden.`);
       console.log(`  Erneut mit --add ausführen um sie zur Config hinzuzufügen:\n`);
@@ -125,7 +169,75 @@ async function cmdScanExtended(config: Config, ports: typeof config.ports): Prom
   }
 }
 
-function addDevicesToConfig(config: Config, newDevices: DeviceConfig[], configPathOpt?: string): void {
+async function probeDevices(config: Config, devices: DeviceConfig[]): Promise<void> {
+  // Group devices by port for efficient probing
+  const byPort = new Map<string, DeviceConfig[]>();
+  for (const dev of devices) {
+    const list = byPort.get(dev.port) || [];
+    list.push(dev);
+    byPort.set(dev.port, list);
+  }
+
+  for (const [portAlias, devs] of byPort) {
+    const portConfig = config.ports.find(p => p.alias === portAlias);
+    if (!portConfig) continue;
+
+    const conn = new MbusConnection(portConfig.path, portConfig.baud_rate, portAlias);
+    try {
+      await conn.connect();
+      for (const dev of devs) {
+        try {
+          process.stdout.write(`  🔍 ${dev.secondary_address}: Lese Zählerdaten... `);
+          const data = await conn.getData(dev.secondary_address);
+
+          // Detect medium from SlaveInformation
+          const slaveMedium = data.SlaveInformation?.Medium?.toLowerCase() || '';
+          if (slaveMedium.includes('electricity') || slaveMedium.includes('energy')) {
+            dev.medium = 'electricity';
+            dev.name = dev.name.replace(/^WZ /, 'EZ ');
+          } else if (slaveMedium.includes('heat') || slaveMedium.includes('wärme')) {
+            dev.medium = 'heat';
+            dev.name = dev.name.replace(/^WZ /, 'WMZ ');
+          } else if (slaveMedium.includes('warm')) {
+            dev.medium = 'warm_water';
+            dev.name = dev.name.replace(/^WZ /, 'WWZ ');
+          } else if (slaveMedium.includes('gas')) {
+            dev.medium = 'gas';
+            dev.name = dev.name.replace(/^WZ /, 'GZ ');
+          }
+
+          // Detect unit factor from primary data record
+          const records = data.DataRecord || [];
+          const primary = records.find(r =>
+            r.Function === 'Instantaneous value' &&
+            r.StorageNumber === 0 &&
+            typeof r.Value === 'number'
+          ) || records.find(r => typeof r.Value === 'number');
+
+          if (primary) {
+            const unitInfo = UNIT_FACTOR_MAP[primary.Unit];
+            if (unitInfo && unitInfo.factor !== 1) {
+              dev.value_factor = unitInfo.factor;
+              console.log(`${dev.medium}, ${primary.Unit} → Faktor ${unitInfo.factor}`);
+            } else {
+              console.log(`${dev.medium}, ${primary.Unit}`);
+            }
+          } else {
+            console.log(`${dev.medium}`);
+          }
+        } catch {
+          console.log('Fehler beim Lesen — verwende Standardwerte');
+        }
+      }
+    } catch {
+      console.log(`  ⚠️  Port ${portAlias}: Verbindung fehlgeschlagen — verwende Standardwerte`);
+    } finally {
+      await conn.disconnect();
+    }
+  }
+}
+
+async function addDevicesToConfig(config: Config, newDevices: DeviceConfig[], configPathOpt?: string): Promise<void> {
   // Find config file
   const candidates = configPathOpt ? [configPathOpt] : CONFIG_PATHS;
   const configPath = candidates.find(p => fs.existsSync(p));
@@ -134,18 +246,25 @@ function addDevicesToConfig(config: Config, newDevices: DeviceConfig[], configPa
     return;
   }
 
+  // Probe each new device to detect medium and unit factor
+  console.log('\n  Erkenne Zählertypen...\n');
+  await probeDevices(config, newDevices);
+
   const raw = fs.readFileSync(configPath, 'utf-8');
   const cfg = yaml.load(raw) as Record<string, unknown>;
   const devices = (cfg.devices as unknown[]) || [];
 
+  console.log('');
   for (const dev of newDevices) {
-    devices.push({
+    const entry: Record<string, unknown> = {
       secondary_address: dev.secondary_address,
       port: dev.port,
       name: dev.name,
       medium: dev.medium,
-    });
-    console.log(`  ✅ ${dev.secondary_address} → ${dev.name} (${dev.port})`);
+      value_factor: dev.value_factor ?? 1,
+    };
+    devices.push(entry);
+    console.log(`  ✅ ${dev.secondary_address} → ${dev.name} (${dev.medium}, Faktor ${entry.value_factor})`);
   }
 
   cfg.devices = devices;
@@ -158,6 +277,5 @@ function addDevicesToConfig(config: Config, newDevices: DeviceConfig[], configPa
     : 'rc-service mbus2mqtt restart';
 
   console.log(`\n  ${newDevices.length} Gerät(e) zur Config hinzugefügt: ${configPath}`);
-  console.log(`  Medium: water (Standard) — bei Bedarf in Config anpassen.`);
   console.log(`  Neustart: ${restartCmd}\n`);
 }

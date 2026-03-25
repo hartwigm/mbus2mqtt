@@ -193,9 +193,9 @@ export async function cmdSetup(configPath?: string): Promise<void> {
 
   console.log(`\n  ✅ Config geschrieben: ${targetPath}`);
   console.log(`\n  Nächste Schritte:`);
-  console.log(`  1. m2q scan              Geräte auf dem Bus finden`);
-  console.log(`  2. Config bearbeiten     Gefundene Geräte eintragen`);
-  console.log(`  3. ${restartCmd}`);
+  console.log(`  1. m2q scan --add        Geräte finden und eintragen`);
+  console.log(`  2. m2q config            Config prüfen/anpassen`);
+  console.log(`  3. m2q restart           Dienst neu starten`);
   console.log('');
 
   rl.close();

@@ -110,10 +110,11 @@ cat > /etc/motd << 'EOF'
   │  m2q read <id>       Read single meter           │
   │  m2q run             Start daemon                │
   │  m2q update          Update from GitHub          │
+  │  m2q config          Edit config file            │
+  │  m2q restart         Restart service             │
   │                                                  │
   │  sudo systemctl start|stop|status mbus2mqtt      │
   │  journalctl -u mbus2mqtt -f                      │
-  │  sudo nano /etc/mbus2mqtt/config.yaml            │
   │                                                  │
   └──────────────────────────────────────────────────┘
 EOF

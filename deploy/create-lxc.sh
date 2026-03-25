@@ -203,9 +203,11 @@ ALIASEOF
   │  m2q run             Start daemon                │
   │  m2q update          Update from GitHub          │
   │                                                  │
+  │  m2q config          Edit config file              │
+  │  m2q restart         Restart service              │
+  │                                                  │
   │  rc-service mbus2mqtt start|stop|status          │
   │  tail -f /var/log/mbus2mqtt.log                  │
-  │  nano /etc/mbus2mqtt/config.yaml                 │
   │                                                  │
   └──────────────────────────────────────────────────┘
 MOTDEOF
