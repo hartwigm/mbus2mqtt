@@ -70,6 +70,24 @@ pct create "$CTID" "$TEMPLATE" \
   --password "$PASSWORD" \
   --start 0
 
+# Detect USB serial adapters on host
+echo "Scanning for USB serial adapters on host..."
+USB_DEVICES=()
+if [ -d /dev/serial/by-id ]; then
+  for dev in /dev/serial/by-id/*; do
+    [ -e "$dev" ] || continue
+    REAL_DEV=$(readlink -f "$dev")
+    DEV_NAME=$(basename "$dev")
+    echo "  Found: $DEV_NAME → $REAL_DEV"
+    USB_DEVICES+=("$REAL_DEV")
+  done
+fi
+
+if [ ${#USB_DEVICES[@]} -eq 0 ]; then
+  echo -e "${RED}  Warning: No USB serial adapters found on host!${NC}"
+  echo "  Plug in M-Bus adapter and re-run, or manually add to /etc/pve/lxc/${CTID}.conf"
+fi
+
 # USB serial passthrough
 echo "Configuring USB passthrough..."
 LXC_CONF="/etc/pve/lxc/${CTID}.conf"
@@ -78,19 +96,30 @@ cat >> "$LXC_CONF" << 'USBEOF'
 
 # USB serial passthrough for M-Bus adapters (major 188 = ttyUSB)
 lxc.cgroup2.devices.allow: c 188:* rwm
-lxc.mount.entry: /dev/ttyUSB0 dev/ttyUSB0 none bind,optional,create=file
-lxc.mount.entry: /dev/ttyUSB1 dev/ttyUSB1 none bind,optional,create=file
 lxc.mount.entry: /dev/serial dev/serial none bind,optional,create=dir
 USBEOF
 
-# Udev rule on host for permissions
+# Add mount entries for each detected device
+for dev in "${USB_DEVICES[@]}"; do
+  DEV_SHORT="${dev#/dev/}"
+  echo "lxc.mount.entry: $dev dev/$DEV_SHORT none bind,optional,create=file" >> "$LXC_CONF"
+  echo "  Passthrough: $dev"
+done
+
+# Udev rule on host for permissions (FTDI, Prolific, CH340)
 UDEV_RULE="/etc/udev/rules.d/99-mbus-usb.rules"
 if [ ! -f "$UDEV_RULE" ]; then
   cat > "$UDEV_RULE" << 'UDEVEOF'
+# FTDI FT232R
 SUBSYSTEM=="tty", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="6001", MODE="0666"
+# Prolific PL2303
+SUBSYSTEM=="tty", ATTRS{idVendor}=="067b", ATTRS{idProduct}=="2303", MODE="0666"
+SUBSYSTEM=="tty", ATTRS{idVendor}=="067b", ATTRS{idProduct}=="23a3", MODE="0666"
+# CH340
+SUBSYSTEM=="tty", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="7523", MODE="0666"
 UDEVEOF
   udevadm control --reload-rules
-  echo "  Created udev rule for FTDI devices"
+  echo "  Created udev rules for USB serial adapters"
 fi
 
 # Start container
@@ -195,6 +224,7 @@ echo ""
 echo "  Container: $CTID ($HOSTNAME)"
 echo "  IP:        $CTIP"
 echo "  OS:        Alpine Linux (~${MEMORY}MB RAM, ${DISK}GB disk)"
+echo "  USB:       ${#USB_DEVICES[@]} serial adapter(s) passed through"
 echo ""
 echo "  Login:     pct enter $CTID"
 echo "  Then type: m2q setup"
