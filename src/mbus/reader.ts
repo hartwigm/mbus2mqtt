@@ -71,14 +71,17 @@ export async function readDevice(
   const raw = primary.value * factor;
   const value = factor !== 1 ? parseFloat(raw.toPrecision(10)) : raw;
 
-  log.debug(`Read ${device.name}: ${primary.value} ${primary.unit} (factor ${factor} → ${value})`);
+  // Electricity always in kWh
+  const unit = device.medium === 'electricity' ? 'kWh' : primary.unit;
+
+  log.debug(`Read ${device.name}: ${primary.value} ${primary.unit} (factor ${factor} → ${value} ${unit})`);
 
   return {
     device_id: device.secondary_address,
     name: device.name,
     medium: device.medium,
     value,
-    unit: primary.unit,
+    unit,
     timestamp: new Date().toISOString(),
     raw_records: records as unknown as Record<string, unknown>[],
   };

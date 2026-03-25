@@ -216,9 +216,21 @@ async function probeDevices(config: Config, devices: DeviceConfig[]): Promise<vo
 
           if (primary) {
             const unitInfo = UNIT_FACTOR_MAP[primary.Unit];
-            if (unitInfo && unitInfo.factor !== 1) {
-              dev.value_factor = unitInfo.factor;
-              console.log(`${dev.medium}, ${primary.Unit} → Faktor ${unitInfo.factor}`);
+            let factor = unitInfo?.factor ?? 1;
+
+            // Electricity: always normalize to kWh
+            if (dev.medium === 'electricity' && unitInfo) {
+              if (unitInfo.unit === 'Wh') {
+                factor = factor / 1000;  // e.g. "Energy (10 Wh)" → 10/1000 = 0.01
+              } else if (unitInfo.unit === 'MWh') {
+                factor = factor * 1000;
+              }
+              // kWh stays as-is
+            }
+
+            dev.value_factor = factor;
+            if (factor !== 1) {
+              console.log(`${dev.medium}, ${primary.Unit} → Faktor ${factor} (kWh)`);
             } else {
               console.log(`${dev.medium}, ${primary.Unit}`);
             }
