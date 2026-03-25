@@ -15,26 +15,25 @@ const MEDIUM_MAP: Record<number, { medium: DeviceConfig['medium']; prefix: strin
   0x0D: { medium: 'heat', prefix: 'WMZ' },
 };
 
-// node-mbus already applies the VIF multiplier to the value.
-// The unit string (e.g. "10 Wh") only describes resolution — factor here is always 1.
-// We map to the base unit for downstream normalization (e.g. electricity → kWh).
+// node-mbus returns the raw register value; the unit string describes the VIF multiplier.
+// factor = multiplier to convert raw value to the base unit (Wh, m³, etc.)
 const UNIT_FACTOR_MAP: Record<string, { factor: number; unit: string }> = {
-  'Energy (10 Wh)': { factor: 1, unit: 'Wh' },
-  'Energy (100 Wh)': { factor: 1, unit: 'Wh' },
+  'Energy (10 Wh)': { factor: 10, unit: 'Wh' },
+  'Energy (100 Wh)': { factor: 100, unit: 'Wh' },
   'Energy (Wh)': { factor: 1, unit: 'Wh' },
   'Energy (kWh)': { factor: 1, unit: 'kWh' },
   'Energy (MWh)': { factor: 1, unit: 'MWh' },
   'Energy (J)': { factor: 1, unit: 'J' },
   'Energy (kJ)': { factor: 1, unit: 'kJ' },
-  'Energy (10 kJ)': { factor: 1, unit: 'kJ' },
-  'Energy (100 kJ)': { factor: 1, unit: 'kJ' },
+  'Energy (10 kJ)': { factor: 10, unit: 'kJ' },
+  'Energy (100 kJ)': { factor: 100, unit: 'kJ' },
   'Volume (m m^3)': { factor: 1, unit: 'm³' },
   'Volume (m^3)': { factor: 1, unit: 'm³' },
-  'Volume (1e-1  m^3)': { factor: 1, unit: 'm³' },
-  'Volume (1e-2  m^3)': { factor: 1, unit: 'm³' },
-  'Volume (1e-3  m^3)': { factor: 1, unit: 'm³' },
-  'Volume (10 m^3)': { factor: 1, unit: 'm³' },
-  'Volume (100 m^3)': { factor: 1, unit: 'm³' },
+  'Volume (1e-1  m^3)': { factor: 0.1, unit: 'm³' },
+  'Volume (1e-2  m^3)': { factor: 0.01, unit: 'm³' },
+  'Volume (1e-3  m^3)': { factor: 0.001, unit: 'm³' },
+  'Volume (10 m^3)': { factor: 10, unit: 'm³' },
+  'Volume (100 m^3)': { factor: 100, unit: 'm³' },
 };
 
 function parseMediumFromAddress(secondaryAddress: string): { medium: DeviceConfig['medium']; prefix: string } {
@@ -223,9 +222,9 @@ async function probeDevices(config: Config, devices: DeviceConfig[]): Promise<vo
             // Electricity: always normalize to kWh
             if (dev.medium === 'electricity' && unitInfo) {
               if (unitInfo.unit === 'Wh') {
-                factor = 0.001;    // Wh → kWh
+                factor = factor / 1000;  // e.g. "Energy (10 Wh)" → 10/1000 = 0.01
               } else if (unitInfo.unit === 'MWh') {
-                factor = 1000;     // MWh → kWh
+                factor = factor * 1000;  // MWh → kWh
               }
               // kWh → factor stays 1
             }

@@ -18,6 +18,8 @@ export class MqttPublisher {
         username: this.config.username || undefined,
         password: this.config.password || undefined,
         clientId: this.config.client_id,
+        keepalive: 60,
+        reconnectPeriod: 5000,
         will: {
           topic: `mbus2mqtt/status`,
           payload: Buffer.from('offline'),
@@ -26,19 +28,26 @@ export class MqttPublisher {
         },
       });
 
+      let connected = false;
+
       this.client.on('connect', () => {
-        log.info(`MQTT connected to ${this.config.broker}`);
-        this.publish('mbus2mqtt/status', 'online', true);
-        resolve();
+        if (!connected) {
+          connected = true;
+          log.info(`MQTT connected to ${this.config.broker}`);
+          this.publish('mbus2mqtt/status', 'online', true);
+          resolve();
+        } else {
+          log.info(`MQTT reconnected to ${this.config.broker}`);
+        }
       });
 
       this.client.on('error', (err) => {
         log.error(`MQTT error: ${err.message}`);
-        reject(err);
+        if (!connected) reject(err);
       });
 
       this.client.on('reconnect', () => {
-        log.warn('MQTT reconnecting...');
+        log.debug('MQTT reconnecting...');
       });
     });
   }
