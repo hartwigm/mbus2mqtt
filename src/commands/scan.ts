@@ -229,9 +229,21 @@ async function probeDevices(config: Config, devices: DeviceConfig[]): Promise<vo
               // kWh → factor stays 1
             }
 
+            // Water: always normalize to m³
+            if ((dev.medium === 'water' || dev.medium === 'warm_water') && unitInfo) {
+              // UNIT_FACTOR_MAP already maps Volume entries to m³ with correct factor
+              // factor stays as-is (e.g. 0.001 for liters, 1 for m³)
+            } else if ((dev.medium === 'water' || dev.medium === 'warm_water') && !unitInfo) {
+              // Unknown unit for water — assume liters, default 0.001
+              factor = 0.001;
+            }
+
             dev.value_factor = factor;
+            const targetUnit = dev.medium === 'electricity' ? 'kWh'
+              : (dev.medium === 'water' || dev.medium === 'warm_water') ? 'm³'
+              : unitInfo?.unit ?? '';
             if (factor !== 1) {
-              console.log(`${dev.medium}, ${primary.Unit} → Faktor ${factor} (kWh)`);
+              console.log(`${dev.medium}, ${primary.Unit} → Faktor ${factor} (${targetUnit})`);
             } else {
               console.log(`${dev.medium}, ${primary.Unit}`);
             }
@@ -284,11 +296,6 @@ async function addDevicesToConfig(config: Config, newDevices: DeviceConfig[], co
   const updated = yaml.dump(cfg, { lineWidth: 120, noRefs: true });
   fs.writeFileSync(configPath, updated, 'utf-8');
 
-  const svcMgr = fs.existsSync('/run/systemd/system') ? 'systemd' : 'openrc';
-  const restartCmd = svcMgr === 'systemd'
-    ? 'sudo systemctl restart mbus2mqtt'
-    : 'rc-service mbus2mqtt restart';
-
   console.log(`\n  ${newDevices.length} Gerät(e) zur Config hinzugefügt: ${configPath}`);
-  console.log(`  Neustart: ${restartCmd}\n`);
+  console.log(`  Neustart: m2q restart\n`);
 }

@@ -17,6 +17,7 @@ export class Scheduler {
   private timer: NodeJS.Timeout | null = null;
   private running = false;
   private reading = false;
+  private firstTick = true;
 
   constructor(config: Config, portManager: PortManager, mqttClient: MqttPublisher, store: ReadingsStore) {
     this.config = config;
@@ -39,6 +40,10 @@ export class Scheduler {
   }
 
   private getDevicesDue(): DeviceConfig[] {
+    if (this.firstTick) {
+      this.firstTick = false;
+      return [...this.config.devices];
+    }
     const now = Date.now();
     return this.config.devices.filter(dev => {
       const state = this.store.get(dev.secondary_address);
