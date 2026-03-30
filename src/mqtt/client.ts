@@ -1,4 +1,5 @@
 import * as mqtt from 'mqtt';
+import * as os from 'os';
 import { MqttConfig } from '../types';
 import { getLogger } from '../util/logger';
 
@@ -77,6 +78,29 @@ export class MqttPublisher {
         resolve();
       });
     });
+  }
+
+  async publishHeartbeat(): Promise<void> {
+    const topic = `property/${this.config.client_id}/online`;
+    const ip = this.getLocalIp();
+    const payload = {
+      ip,
+      timestamp: new Date().toISOString(),
+    };
+    await this.publish(topic, payload, true);
+  }
+
+  private getLocalIp(): string {
+    const interfaces = os.networkInterfaces();
+    for (const iface of Object.values(interfaces)) {
+      if (!iface) continue;
+      for (const addr of iface) {
+        if (addr.family === 'IPv4' && !addr.internal) {
+          return addr.address;
+        }
+      }
+    }
+    return '127.0.0.1';
   }
 
   isConnected(): boolean {

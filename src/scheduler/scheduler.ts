@@ -120,6 +120,7 @@ export class Scheduler {
       }
 
       this.store.save();
+      await this.mqttClient.publishHeartbeat();
       log.info(`Done: ${readings.length}/${due.length} OK`);
     } finally {
       this.reading = false;
