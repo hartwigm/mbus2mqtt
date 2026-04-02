@@ -5,7 +5,7 @@ Wants=network.target
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/node /opt/mbus2mqtt/dist/index.js run -c /etc/mbus2mqtt/config.yaml
+ExecStart=__NODE_PATH__ /opt/mbus2mqtt/dist/index.js run -c /etc/mbus2mqtt/config.yaml
 WorkingDirectory=/opt/mbus2mqtt
 Restart=always
 RestartSec=30

@@ -23,8 +23,16 @@ if [ ! -f "$CONFIG_DIR/config.yaml" ]; then
   echo "Created $CONFIG_DIR/config.yaml - please edit before starting!"
 fi
 
-# Install systemd service
-cp deploy/mbus2mqtt.service /etc/systemd/system/
+# Detect node path
+NODE_PATH=$(which node 2>/dev/null || echo "")
+if [ -z "$NODE_PATH" ]; then
+  echo "ERROR: node not found in PATH. Install Node.js first."
+  exit 1
+fi
+echo "Using node at: $NODE_PATH"
+
+# Install systemd service with correct node path
+sed "s|__NODE_PATH__|$NODE_PATH|g" deploy/mbus2mqtt.service > /etc/systemd/system/mbus2mqtt.service
 systemctl daemon-reload
 systemctl enable mbus2mqtt
 
