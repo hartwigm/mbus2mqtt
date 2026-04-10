@@ -32,7 +32,7 @@ echo ""
 # Node.js — detect architecture and install accordingly
 echo "Installing Node.js..."
 ARCH=$(dpkg --print-architecture)
-if ! command -v node &>/dev/null || [ "$(node --version | cut -d. -f1 | tr -d v)" -lt 18 ]; then
+if ! command -v node &>/dev/null || [ "$(node --version | cut -d. -f1 | tr -d v)" -lt 22 ]; then
   if [ "$ARCH" = "armhf" ]; then
     # NodeSource doesn't support armhf — use official Node.js armv7l binary
     NODE_VER="v22.14.0"
