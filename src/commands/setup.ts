@@ -184,7 +184,17 @@ export async function cmdSetup(configPath?: string): Promise<void> {
   }
 
   const configYaml = yaml.dump(newConfig, { lineWidth: 120, noRefs: true });
-  fs.writeFileSync(targetPath, configYaml, 'utf-8');
+  try {
+    fs.writeFileSync(targetPath, configYaml, 'utf-8');
+  } catch (err: any) {
+    if (err.code === 'EACCES') {
+      console.error(`\n  ❌ Keine Schreibrechte für ${targetPath}`);
+      console.error(`  → Erneut mit sudo ausführen: sudo m2q setup`);
+      rl.close();
+      process.exit(1);
+    }
+    throw err;
+  }
 
   const svcMgr = detectServiceManager();
   const restartCmd = svcMgr === 'systemd'

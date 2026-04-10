@@ -294,7 +294,16 @@ async function addDevicesToConfig(config: Config, newDevices: DeviceConfig[], co
 
   cfg.devices = devices;
   const updated = yaml.dump(cfg, { lineWidth: 120, noRefs: true });
-  fs.writeFileSync(configPath, updated, 'utf-8');
+  try {
+    fs.writeFileSync(configPath, updated, 'utf-8');
+  } catch (err: any) {
+    if (err.code === 'EACCES') {
+      console.error(`\n  ❌ Keine Schreibrechte für ${configPath}`);
+      console.error(`  → Erneut mit sudo ausführen: sudo m2q scan --add`);
+      process.exit(1);
+    }
+    throw err;
+  }
 
   console.log(`\n  ${newDevices.length} Gerät(e) zur Config hinzugefügt: ${configPath}`);
   console.log(`  Neustart: m2q restart\n`);
