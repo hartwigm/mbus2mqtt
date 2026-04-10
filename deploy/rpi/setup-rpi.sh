@@ -67,8 +67,11 @@ npm install --loglevel=warn
 echo "Building..."
 npm run build
 
-# Config
+# Config & state directories (writable for m2q commands)
 mkdir -p "$CONFIG_DIR" "$STATE_DIR"
+chmod 777 "$STATE_DIR"
+touch /var/log/mbus2mqtt.log
+chmod 666 /var/log/mbus2mqtt.log
 if [ ! -f "$CONFIG_DIR/config.yaml" ]; then
   cp config/config.example.yaml "$CONFIG_DIR/config.yaml"
   sed -i "s/^property:.*/property: \"${PROPERTY}\"/" "$CONFIG_DIR/config.yaml"
