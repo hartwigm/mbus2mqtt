@@ -78,8 +78,9 @@ if [ ! -f "$CONFIG_DIR/config.yaml" ]; then
   sed -i "s/mbus2mqtt-M47/mbus2mqtt-${PROPERTY}/" "$CONFIG_DIR/config.yaml"
 fi
 
-# systemd service
-cp deploy/mbus2mqtt.service /etc/systemd/system/
+# systemd service (replace __NODE_PATH__ placeholder)
+NODE_PATH=$(which node)
+sed "s|__NODE_PATH__|$NODE_PATH|g" deploy/mbus2mqtt.service > /etc/systemd/system/mbus2mqtt.service
 systemctl daemon-reload
 systemctl enable mbus2mqtt
 
