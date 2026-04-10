@@ -8,12 +8,16 @@ import { getLogger } from '../util/logger';
 export async function cmdTestMqtt(config: Config): Promise<void> {
   const log = getLogger();
   const pm = new PortManager(config);
-  const mqttClient = new MqttPublisher(config.mqtt);
+  const testMqttConfig = {
+    ...config.mqtt,
+    client_id: `${config.mqtt.client_id || 'mbus2mqtt'}-test-${Date.now()}`,
+  };
+  const mqttClient = new MqttPublisher(testMqttConfig);
 
   try {
     // 1. MQTT verbinden
     console.log(`\n  MQTT Broker: ${config.mqtt.broker}`);
-    console.log(`  Client-ID:  ${config.mqtt.client_id}`);
+    console.log(`  Client-ID:  ${testMqttConfig.client_id}`);
     console.log(`  Verbinde...`);
 
     await mqttClient.connect();
@@ -41,6 +45,7 @@ export async function cmdTestMqtt(config: Config): Promise<void> {
       console.log(`  ⚠️  Keine Geräte konnten gelesen werden\n`);
     }
 
+    let published = 0;
     for (const reading of readings) {
       const payload = {
         value: reading.value,
@@ -51,10 +56,16 @@ export async function cmdTestMqtt(config: Config): Promise<void> {
       };
 
       const haTopic = haStateTopic(config.property, reading.device_id);
-      await mqttClient.publish(haTopic, payload, true);
-
       const aiTopic = houseAiTopic(config.property, reading.device_id);
+
+      if (!mqttClient.isConnected()) {
+        console.log(`  ❌ ${reading.name}: ${reading.value} ${reading.unit} — MQTT nicht verbunden`);
+        continue;
+      }
+
+      await mqttClient.publish(haTopic, payload, true);
       await mqttClient.publish(aiTopic, { value: reading.value, timestamp: now });
+      published++;
 
       console.log(`  ✅ ${reading.name}: ${reading.value} ${reading.unit}`);
       console.log(`     HA:       ${haTopic}`);
@@ -69,7 +80,7 @@ export async function cmdTestMqtt(config: Config): Promise<void> {
       console.log(`  ❌ ${dev.name} (${dev.secondary_address}) — Lesen fehlgeschlagen`);
     }
 
-    console.log(`\n  Ergebnis: ${readings.length}/${config.devices.length} gelesen und gesendet`);
+    console.log(`\n  Ergebnis: ${readings.length}/${config.devices.length} gelesen, ${published}/${readings.length} gesendet`);
     console.log();
   } catch (err) {
     console.error(`  ❌ Fehler: ${err}`);
