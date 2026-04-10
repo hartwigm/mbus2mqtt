@@ -71,8 +71,8 @@ export async function readDevice(
   const raw = primary.value * factor;
   const value = factor !== 1 ? parseFloat(raw.toPrecision(10)) : raw;
 
-  // Electricity always in kWh
-  const unit = device.medium === 'electricity' ? 'kWh' : primary.unit;
+  // Energy mediums: value is already in kWh (via value_factor or meter native)
+  const unit = (device.medium === 'electricity' || device.medium === 'heat') ? 'kWh' : primary.unit;
 
   log.debug(`Read ${device.name}: ${primary.value} ${primary.unit} (factor ${factor} → ${value} ${unit})`);
 
