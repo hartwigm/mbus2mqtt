@@ -10,6 +10,7 @@ import { cmdRun } from './commands/run';
 import { cmdUpdate } from './commands/update';
 import { cmdSetup } from './commands/setup';
 import { cmdTestMqtt } from './commands/test-mqtt';
+import { cmdConfigHA } from './commands/config-ha';
 
 const program = new Command();
 
@@ -81,6 +82,17 @@ program
     const config = loadConfig(program.opts().config);
     initLogger(config.logging.level, config.logging.file);
     await cmdTestMqtt(config);
+  });
+
+program
+  .command('config-ha')
+  .description('Home Assistant Discovery anzeigen, bereinigen oder neu senden')
+  .option('--clean', 'Alte retained Discovery-Messages vom Broker löschen')
+  .option('--reset', 'Löschen + Discovery neu senden')
+  .action(async (opts) => {
+    const config = loadConfig(program.opts().config);
+    initLogger(config.logging.level, config.logging.file);
+    await cmdConfigHA(config, opts);
   });
 
 program
