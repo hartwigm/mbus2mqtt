@@ -92,6 +92,14 @@ EOF
 chmod +x /usr/local/bin/m2q
 rm -f /etc/profile.d/mbus2mqtt.sh
 
+# Allow passwordless sudo for m2q commands
+NODE_BIN=$(which node)
+cat > /etc/sudoers.d/mbus2mqtt << SUDOEOF
+ALL ALL=(ALL) NOPASSWD: $NODE_BIN /opt/mbus2mqtt/dist/index.js *
+ALL ALL=(ALL) NOPASSWD: /usr/bin/systemctl start mbus2mqtt, /usr/bin/systemctl stop mbus2mqtt, /usr/bin/systemctl restart mbus2mqtt
+SUDOEOF
+chmod 440 /etc/sudoers.d/mbus2mqtt
+
 # udev rules for USB serial adapters
 cat > /etc/udev/rules.d/99-mbus-usb.rules << 'EOF'
 # FTDI FT232R

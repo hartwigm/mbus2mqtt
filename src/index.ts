@@ -112,7 +112,7 @@ program
     const fs = require('fs');
     try {
       if (fs.existsSync('/run/systemd/system')) {
-        execSync('systemctl restart mbus2mqtt', { stdio: 'inherit' });
+        execSync('sudo systemctl restart mbus2mqtt', { stdio: 'inherit' });
       } else {
         execSync('rc-service mbus2mqtt restart', { stdio: 'inherit' });
       }
