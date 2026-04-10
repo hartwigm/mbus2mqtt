@@ -80,10 +80,13 @@ cp deploy/mbus2mqtt.service /etc/systemd/system/
 systemctl daemon-reload
 systemctl enable mbus2mqtt
 
-# CLI alias
-cat > /etc/profile.d/mbus2mqtt.sh << 'EOF'
-alias m2q="node /opt/mbus2mqtt/dist/index.js -c /etc/mbus2mqtt/config.yaml"
+# CLI wrapper (works with and without sudo)
+cat > /usr/local/bin/m2q << 'EOF'
+#!/bin/bash
+exec sudo node /opt/mbus2mqtt/dist/index.js -c /etc/mbus2mqtt/config.yaml "$@"
 EOF
+chmod +x /usr/local/bin/m2q
+rm -f /etc/profile.d/mbus2mqtt.sh
 
 # udev rules for USB serial adapters
 cat > /etc/udev/rules.d/99-mbus-usb.rules << 'EOF'
@@ -120,7 +123,12 @@ cat > /etc/motd << 'EOF'
 EOF
 
 # Hostname
-hostnamectl set-hostname "mbus2mqtt-${PROPERTY,,}" 2>/dev/null || true
+NEW_HOST="mbus2mqtt-${PROPERTY,,}"
+hostnamectl set-hostname "$NEW_HOST" 2>/dev/null || true
+if ! grep -q "$NEW_HOST" /etc/hosts 2>/dev/null; then
+  sed -i "s/127\.0\.1\.1.*/127.0.1.1\t$NEW_HOST/" /etc/hosts 2>/dev/null \
+    || echo "127.0.1.1	$NEW_HOST" >> /etc/hosts
+fi
 
 # Timezone
 timedatectl set-timezone Europe/Berlin 2>/dev/null || true
@@ -138,8 +146,8 @@ echo -e "${GREEN}=== mbus2mqtt installed ===${NC}"
 echo ""
 echo "  Nächste Schritte:"
 echo "  1. USB-Adapter anschließen"
-echo "  2. source /etc/profile.d/mbus2mqtt.sh"
-echo "  3. m2q setup"
+echo "  2. m2q setup"
+echo "  3. m2q scan --add"
 echo "  4. sudo nano /etc/mbus2mqtt/config.yaml"
 echo "  5. sudo systemctl start mbus2mqtt"
 echo ""
