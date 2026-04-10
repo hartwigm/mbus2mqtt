@@ -2,7 +2,7 @@ import { Config, DeviceConfig, MeterReading } from '../types';
 import { PortManager } from '../mbus/port-manager';
 import { MqttPublisher } from '../mqtt/client';
 import { ReadingsStore } from '../store/readings-store';
-import { buildDiscovery } from '../mqtt/ha-discovery';
+import { buildDiscovery, normalizeToHAUnit } from '../mqtt/ha-discovery';
 import { haStateTopic, houseAiTopic } from '../mqtt/topics';
 import { shouldPublishHA, shouldPublishHouseAiHourly, isDailyWindow } from './strategies';
 import { getLogger } from '../util/logger';
@@ -77,10 +77,11 @@ export class Scheduler {
           read_errors: 0,
         });
 
-        // HA payload (full)
+        // HA payload — normalize unit to match discovery declaration
+        const ha = normalizeToHAUnit(reading.value, reading.unit, reading.medium);
         const payload = {
-          value: reading.value,
-          unit: reading.unit,
+          value: ha.value,
+          unit: ha.unit,
           medium: reading.medium,
           name: reading.name,
           timestamp: now,
@@ -90,7 +91,7 @@ export class Scheduler {
           const topic = haStateTopic(this.config.property, reading.device_id);
           await this.mqttClient.publish(topic, payload, true);
           this.store.update(reading.device_id, { last_ha_publish: now });
-          log.debug(`HA: ${reading.name} = ${reading.value} ${reading.unit}`);
+          log.debug(`HA: ${reading.name} = ${ha.value} ${ha.unit}`);
         }
 
         // house.ai payload (value + timestamp only)
