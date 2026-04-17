@@ -8,16 +8,12 @@ import { getLogger } from '../util/logger';
 export async function cmdTestMqtt(config: Config): Promise<void> {
   const log = getLogger();
   const pm = new PortManager(config);
-  const testMqttConfig = {
-    ...config.mqtt,
-    client_id: `${config.mqtt.client_id || 'mbus2mqtt'}-test-${Date.now()}`,
-  };
-  const mqttClient = new MqttPublisher(testMqttConfig);
+  const mqttClient = new MqttPublisher(config.mqtt);
 
   try {
     // 1. MQTT verbinden
     console.log(`\n  MQTT Broker: ${config.mqtt.broker}`);
-    console.log(`  Client-ID:  ${testMqttConfig.client_id}`);
+    console.log(`  Client-ID:  ${config.mqtt.client_id}`);
     console.log(`  Verbinde...`);
 
     await mqttClient.connect();
