@@ -24,6 +24,13 @@ export class MqttPublisher {
   async connect(): Promise<void> {
     const log = getLogger();
 
+    // Normalize broker URL: accept bare "host:port" and prepend mqtt:// scheme
+    // so mqtt.js doesn't mis-parse (URL module would treat "host:port" like
+    // protocol=host, pathname=port).
+    const brokerUrl = /^(mqtt|mqtts|ws|wss):\/\//.test(this.config.broker)
+      ? this.config.broker
+      : `mqtt://${this.config.broker}`;
+
     return new Promise((resolve, reject) => {
       const connOpts: mqtt.IClientOptions = {
         username: this.config.username || undefined,
@@ -42,7 +49,8 @@ export class MqttPublisher {
           retain: true,
         };
       }
-      this.client = mqtt.connect(this.config.broker, connOpts);
+      log.debug(`MQTT connecting to ${brokerUrl} as user=${this.config.username || '(anon)'} clientId=${this.config.client_id}`);
+      this.client = mqtt.connect(brokerUrl, connOpts);
 
       let connected = false;
       let settled = false;
