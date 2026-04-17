@@ -220,12 +220,16 @@ async function probeDevices(config: Config, devices: DeviceConfig[]): Promise<vo
             const unitInfo = UNIT_FACTOR_MAP[primary.Unit];
             let factor = unitInfo?.factor ?? 1;
 
-            // Electricity: always normalize to kWh
-            if (dev.medium === 'electricity' && unitInfo) {
+            // Electricity + heat: always normalize to kWh
+            if ((dev.medium === 'electricity' || dev.medium === 'heat') && unitInfo) {
               if (unitInfo.unit === 'Wh') {
                 factor = factor / 1000;  // e.g. "Energy (10 Wh)" → 10/1000 = 0.01
               } else if (unitInfo.unit === 'MWh') {
                 factor = factor * 1000;  // MWh → kWh
+              } else if (unitInfo.unit === 'J') {
+                factor = factor / 3600000;  // J → kWh
+              } else if (unitInfo.unit === 'kJ') {
+                factor = factor / 3600;  // kJ → kWh
               }
               // kWh → factor stays 1
             }
@@ -240,7 +244,7 @@ async function probeDevices(config: Config, devices: DeviceConfig[]): Promise<vo
             }
 
             dev.value_factor = factor;
-            const targetUnit = dev.medium === 'electricity' ? 'kWh'
+            const targetUnit = (dev.medium === 'electricity' || dev.medium === 'heat') ? 'kWh'
               : (dev.medium === 'water' || dev.medium === 'warm_water') ? 'm³'
               : unitInfo?.unit ?? '';
             if (factor !== 1) {
