@@ -27,13 +27,14 @@ const UNIT_FACTOR_MAP: Record<string, { factor: number; unit: string }> = {
   'Energy (kJ)': { factor: 1, unit: 'kJ' },
   'Energy (10 kJ)': { factor: 10, unit: 'kJ' },
   'Energy (100 kJ)': { factor: 100, unit: 'kJ' },
-  'Volume (m m^3)': { factor: 1, unit: 'm³' },
+  // libmbus formats the VIF exponent as a prefix: "m"=milli, "my"=micro, "k"=kilo
+  // "Volume (m m^3)" is literally milli-m³ = liters, so factor 0.001 → m³
+  'Volume (my m^3)': { factor: 0.000001, unit: 'm³' },
+  'Volume (m m^3)': { factor: 0.001, unit: 'm³' },
   'Volume (m^3)': { factor: 1, unit: 'm³' },
-  'Volume (1e-1  m^3)': { factor: 0.1, unit: 'm³' },
-  'Volume (1e-2  m^3)': { factor: 0.01, unit: 'm³' },
-  'Volume (1e-3  m^3)': { factor: 0.001, unit: 'm³' },
   'Volume (10 m^3)': { factor: 10, unit: 'm³' },
   'Volume (100 m^3)': { factor: 100, unit: 'm³' },
+  'Volume (k m^3)': { factor: 1000, unit: 'm³' },
 };
 
 function parseMediumFromAddress(secondaryAddress: string): { medium: DeviceConfig['medium']; prefix: string } {

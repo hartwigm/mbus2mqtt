@@ -1,8 +1,38 @@
 import { Config } from '../types';
 import { ReadingsStore } from '../store/readings-store';
+import { PortManager } from '../mbus/port-manager';
 
-export async function cmdList(config: Config): Promise<void> {
+export async function cmdList(config: Config, readFirst = false): Promise<void> {
   const store = new ReadingsStore(config.state_file);
+
+  if (readFirst) {
+    console.log(`\n  Lese alle ${config.devices.length} Gerät(e)...`);
+    const pm = new PortManager(config);
+    try {
+      await pm.connectAll();
+      const readings = await pm.readDevices(config.devices);
+      const now = new Date().toISOString();
+      for (const r of readings) {
+        store.update(r.device_id, {
+          last_value: r.value,
+          last_unit: r.unit,
+          last_read: now,
+          read_errors: 0,
+        });
+      }
+      for (const dev of config.devices) {
+        if (!readings.find(r => r.device_id === dev.secondary_address)) {
+          const state = store.get(dev.secondary_address);
+          store.update(dev.secondary_address, { read_errors: state.read_errors + 1 });
+        }
+      }
+      store.save();
+      console.log(`  ${readings.length}/${config.devices.length} erfolgreich gelesen.`);
+    } finally {
+      await pm.disconnectAll();
+    }
+  }
+
   const allState = store.getAll();
 
   console.log(`\n  Property: ${config.property}`);

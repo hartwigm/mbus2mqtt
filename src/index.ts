@@ -36,10 +36,11 @@ program
 program
   .command('list')
   .description('Show configured devices and last readings')
-  .action(async () => {
+  .option('-r, --read', 'Vor der Anzeige alle Zähler lesen und Werte speichern')
+  .action(async (opts) => {
     const config = loadConfig(program.opts().config);
     initLogger(config.logging.level, config.logging.file);
-    await cmdList(config);
+    await cmdList(config, opts.read || false);
   });
 
 program

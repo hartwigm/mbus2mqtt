@@ -3,13 +3,12 @@ import { DeviceConfig, MeterReading } from '../types';
 import { getLogger } from '../util/logger';
 
 const UNIT_MAP: Record<string, string> = {
+  'Volume (my m^3)': 'm³',
   'Volume (m m^3)': 'm³',
   'Volume (m^3)': 'm³',
-  'Volume (1e-1  m^3)': 'm³',
-  'Volume (1e-2  m^3)': 'm³',
-  'Volume (1e-3  m^3)': 'm³',
   'Volume (10 m^3)': 'm³',
   'Volume (100 m^3)': 'm³',
+  'Volume (k m^3)': 'm³',
   'Energy (Wh)': 'Wh',
   'Energy (10 Wh)': 'Wh',
   'Energy (100 Wh)': 'Wh',
@@ -71,8 +70,11 @@ export async function readDevice(
   const raw = primary.value * factor;
   const value = factor !== 1 ? parseFloat(raw.toPrecision(10)) : raw;
 
-  // Energy mediums: value is already in kWh (via value_factor or meter native)
-  const unit = (device.medium === 'electricity' || device.medium === 'heat') ? 'kWh' : primary.unit;
+  // Force canonical unit per medium: energy → kWh, water → m³.
+  // Upstream value_factor is expected to scale raw into that unit.
+  const unit = (device.medium === 'electricity' || device.medium === 'heat') ? 'kWh'
+    : (device.medium === 'water' || device.medium === 'warm_water') ? 'm³'
+    : primary.unit;
 
   log.debug(`Read ${device.name}: ${primary.value} ${primary.unit} (factor ${factor} → ${value} ${unit})`);
 
