@@ -1,17 +1,32 @@
 import { Config } from '../types';
 import { ReadingsStore } from '../store/readings-store';
 import { PortManager } from '../mbus/port-manager';
+import { MqttPublisher } from '../mqtt/client';
+import { buildDiscovery, normalizeToHAUnit } from '../mqtt/ha-discovery';
+import { haStateTopic, houseAiTopic } from '../mqtt/topics';
 
-export async function cmdList(config: Config, readFirst = false): Promise<void> {
+export async function cmdList(config: Config, readFirst = false, publishMqtt = false): Promise<void> {
   const store = new ReadingsStore(config.state_file);
 
   if (readFirst) {
     console.log(`\n  Lese alle ${config.devices.length} Gerät(e)...`);
     const pm = new PortManager(config);
+    const mqttClient = publishMqtt ? new MqttPublisher(config.mqtt) : null;
     try {
       await pm.connectAll();
+      if (mqttClient) {
+        console.log(`  MQTT: verbinde mit ${config.mqtt.broker}...`);
+        await mqttClient.connect();
+        for (const dev of config.devices) {
+          const disc = buildDiscovery(config.property, dev);
+          await mqttClient.publish(disc.topic, disc.payload, true);
+        }
+        console.log(`  MQTT: Discovery für ${config.devices.length} Gerät(e) gesendet`);
+      }
+
       const readings = await pm.readDevices(config.devices);
       const now = new Date().toISOString();
+      let published = 0;
       for (const r of readings) {
         store.update(r.device_id, {
           last_value: r.value,
@@ -19,6 +34,21 @@ export async function cmdList(config: Config, readFirst = false): Promise<void> 
           last_read: now,
           read_errors: 0,
         });
+
+        if (mqttClient) {
+          const ha = normalizeToHAUnit(r.value, r.unit, r.medium);
+          const payload = {
+            value: ha.value,
+            unit: ha.unit,
+            medium: r.medium,
+            name: r.name,
+            timestamp: now,
+          };
+          await mqttClient.publish(haStateTopic(config.property, r.device_id), payload, true);
+          await mqttClient.publish(houseAiTopic(config.property, r.device_id), { value: r.value, timestamp: now });
+          store.update(r.device_id, { last_ha_publish: now });
+          published++;
+        }
       }
       for (const dev of config.devices) {
         if (!readings.find(r => r.device_id === dev.secondary_address)) {
@@ -27,9 +57,10 @@ export async function cmdList(config: Config, readFirst = false): Promise<void> 
         }
       }
       store.save();
-      console.log(`  ${readings.length}/${config.devices.length} erfolgreich gelesen.`);
+      console.log(`  ${readings.length}/${config.devices.length} erfolgreich gelesen${mqttClient ? `, ${published} per MQTT gesendet` : ''}.`);
     } finally {
       await pm.disconnectAll();
+      if (mqttClient) await mqttClient.disconnect();
     }
   }
 

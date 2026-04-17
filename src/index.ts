@@ -37,10 +37,15 @@ program
   .command('list')
   .description('Show configured devices and last readings')
   .option('-r, --read', 'Vor der Anzeige alle Zähler lesen und Werte speichern')
+  .option('-m, --mqtt', 'Gelesene Werte zusätzlich per MQTT senden (nur mit --read)')
   .action(async (opts) => {
     const config = loadConfig(program.opts().config);
     initLogger(config.logging.level, config.logging.file);
-    await cmdList(config, opts.read || false);
+    if (opts.mqtt && !opts.read) {
+      console.error('  ❌ --mqtt erfordert --read');
+      process.exit(1);
+    }
+    await cmdList(config, opts.read || false, opts.mqtt || false);
   });
 
 program
