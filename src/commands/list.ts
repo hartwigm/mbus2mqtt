@@ -11,7 +11,9 @@ export async function cmdList(config: Config, readFirst = false, publishMqtt = f
   if (readFirst) {
     console.log(`\n  Lese alle ${config.devices.length} Gerät(e)...`);
     const pm = new PortManager(config);
-    const mqttClient = publishMqtt ? new MqttPublisher(config.mqtt) : null;
+    const mqttClient = publishMqtt
+      ? new MqttPublisher(config.mqtt, { enableLWT: false, publishStatus: false })
+      : null;
     try {
       await pm.connectAll();
       if (mqttClient) {

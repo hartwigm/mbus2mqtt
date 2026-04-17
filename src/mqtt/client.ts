@@ -3,32 +3,45 @@ import * as os from 'os';
 import { MqttConfig } from '../types';
 import { getLogger } from '../util/logger';
 
+export interface MqttPublisherOptions {
+  enableLWT?: boolean;
+  publishStatus?: boolean;
+}
+
 export class MqttPublisher {
   private client: mqtt.MqttClient | null = null;
   private config: MqttConfig;
+  private options: Required<MqttPublisherOptions>;
 
-  constructor(config: MqttConfig) {
+  constructor(config: MqttConfig, options: MqttPublisherOptions = {}) {
     this.config = config;
+    this.options = {
+      enableLWT: options.enableLWT ?? true,
+      publishStatus: options.publishStatus ?? true,
+    };
   }
 
   async connect(): Promise<void> {
     const log = getLogger();
 
     return new Promise((resolve, reject) => {
-      this.client = mqtt.connect(this.config.broker, {
+      const connOpts: mqtt.IClientOptions = {
         username: this.config.username || undefined,
         password: this.config.password || undefined,
         clientId: this.config.client_id,
         keepalive: 60,
         reconnectPeriod: 5000,
         connectTimeout: 10000,
-        will: {
+      };
+      if (this.options.enableLWT) {
+        connOpts.will = {
           topic: `mbus2mqtt/status`,
           payload: Buffer.from('offline'),
           qos: 1,
           retain: true,
-        },
-      });
+        };
+      }
+      this.client = mqtt.connect(this.config.broker, connOpts);
 
       let connected = false;
       let settled = false;
@@ -49,7 +62,9 @@ export class MqttPublisher {
         if (!connected) {
           connected = true;
           log.info(`MQTT connected to ${this.config.broker}`);
-          this.publish('mbus2mqtt/status', 'online', true);
+          if (this.options.publishStatus) {
+            this.publish('mbus2mqtt/status', 'online', true);
+          }
           settle(resolve);
         } else {
           log.info(`MQTT reconnected to ${this.config.broker}`);
@@ -96,7 +111,7 @@ export class MqttPublisher {
 
   async disconnect(): Promise<void> {
     if (!this.client) return;
-    if (this.client.connected) {
+    if (this.client.connected && this.options.publishStatus) {
       await this.publish('mbus2mqtt/status', 'offline', true);
     }
     return new Promise((resolve) => {
