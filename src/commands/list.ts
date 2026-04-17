@@ -16,7 +16,16 @@ export async function cmdList(config: Config, readFirst = false, publishMqtt = f
       await pm.connectAll();
       if (mqttClient) {
         console.log(`  MQTT: verbinde mit ${config.mqtt.broker}...`);
-        await mqttClient.connect();
+        try {
+          await mqttClient.connect();
+        } catch (err: any) {
+          console.error(`  ❌ MQTT-Verbindung fehlgeschlagen: ${err.message}`);
+          if (/CONNACK/i.test(err.message)) {
+            console.error(`     Tipp: Läuft der Daemon? Gleiche Client-ID kollidiert.`);
+            console.error(`     → m2q stop && m2q list --read --mqtt && m2q start`);
+          }
+          return;
+        }
         for (const dev of config.devices) {
           const disc = buildDiscovery(config.property, dev);
           await mqttClient.publish(disc.topic, disc.payload, true);

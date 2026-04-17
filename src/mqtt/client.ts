@@ -96,9 +96,11 @@ export class MqttPublisher {
 
   async disconnect(): Promise<void> {
     if (!this.client) return;
-    await this.publish('mbus2mqtt/status', 'offline', true);
+    if (this.client.connected) {
+      await this.publish('mbus2mqtt/status', 'offline', true);
+    }
     return new Promise((resolve) => {
-      this.client!.end(false, {}, () => {
+      this.client!.end(true, {}, () => {
         this.client = null;
         resolve();
       });
