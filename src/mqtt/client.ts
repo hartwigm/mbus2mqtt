@@ -32,6 +32,7 @@ export class MqttPublisher {
         keepalive: 60,
         reconnectPeriod: 5000,
         connectTimeout: 10000,
+        protocolVersion: 4, // MQTT 3.1.1 — matches mosquitto_sub default, broadest compat
       };
       if (this.options.enableLWT) {
         connOpts.will = {

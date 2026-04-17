@@ -135,7 +135,10 @@ function serviceAction(action: 'start' | 'stop' | 'restart' | 'status'): void {
       const msg = { start: 'gestartet', stop: 'gestoppt', restart: 'neu gestartet' }[action];
       console.log(`  ✅ mbus2mqtt ${msg}`);
     }
-  } catch {
+  } catch (err: any) {
+    // status commands use non-zero exit codes to indicate state, not errors:
+    // systemd: 3=inactive/dead, 4=not-found; rc-service: 3=stopped, 1=crashed
+    if (action === 'status') return;
     console.log(`  ❌ ${action} fehlgeschlagen — evtl. sudo nötig?`);
   }
 }

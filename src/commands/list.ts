@@ -17,14 +17,22 @@ export async function cmdList(config: Config, readFirst = false, publishMqtt = f
     try {
       await pm.connectAll();
       if (mqttClient) {
-        console.log(`  MQTT: verbinde mit ${config.mqtt.broker}...`);
+        const userDisplay = config.mqtt.username ? config.mqtt.username : '(anonym)';
+        const pwLen = config.mqtt.password ? config.mqtt.password.length : 0;
+        console.log(`  MQTT: Broker=${config.mqtt.broker}`);
+        console.log(`  MQTT: User=${userDisplay}  Passwort=${pwLen} Zeichen  Client-ID=${config.mqtt.client_id}`);
+        console.log(`  MQTT: verbinde...`);
         try {
           await mqttClient.connect();
         } catch (err: any) {
           console.error(`  ❌ MQTT-Verbindung fehlgeschlagen: ${err.message}`);
           if (/CONNACK/i.test(err.message)) {
-            console.error(`     Tipp: Läuft der Daemon? Gleiche Client-ID kollidiert.`);
-            console.error(`     → m2q stop && m2q list --read --mqtt && m2q start`);
+            console.error(`     Häufige Ursachen:`);
+            console.error(`     - Daemon läuft parallel mit gleicher Client-ID  → m2q stop`);
+            console.error(`     - Broker-ACL verbietet Client-ID oder Topic`);
+            console.error(`     - Username/Passwort in /etc/mbus2mqtt/config.yaml falsch`);
+            console.error(`     Teste direkt mit denselben Werten:`);
+            console.error(`     mosquitto_pub -h ${config.mqtt.broker.replace(/^mqtts?:\/\//, '').split(':')[0]} -u ${userDisplay} -P '<pw>' -i ${config.mqtt.client_id} -t test -m x`);
           }
           return;
         }
