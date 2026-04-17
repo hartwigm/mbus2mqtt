@@ -21,6 +21,7 @@ export class MqttPublisher {
         clientId: this.config.client_id,
         keepalive: 60,
         reconnectPeriod: 5000,
+        connectTimeout: 10000,
         will: {
           topic: `mbus2mqtt/status`,
           payload: Buffer.from('offline'),
@@ -30,13 +31,26 @@ export class MqttPublisher {
       });
 
       let connected = false;
+      let settled = false;
+      let closeCount = 0;
+
+      const settle = (fn: () => void) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        fn();
+      };
+
+      const timer = setTimeout(() => {
+        settle(() => reject(new Error(`MQTT connect timeout after 10s (${this.config.broker})`)));
+      }, 10000);
 
       this.client.on('connect', () => {
         if (!connected) {
           connected = true;
           log.info(`MQTT connected to ${this.config.broker}`);
           this.publish('mbus2mqtt/status', 'online', true);
-          resolve();
+          settle(resolve);
         } else {
           log.info(`MQTT reconnected to ${this.config.broker}`);
         }
@@ -44,7 +58,18 @@ export class MqttPublisher {
 
       this.client.on('error', (err) => {
         log.error(`MQTT error: ${err.message}`);
-        if (!connected) reject(err);
+        if (!connected) settle(() => reject(err));
+      });
+
+      this.client.on('close', () => {
+        if (connected) return;
+        closeCount++;
+        if (closeCount >= 2) {
+          settle(() => reject(new Error(
+            `MQTT broker closed connection without CONNACK (${this.config.broker}) — ` +
+            `check auth, ACL or protocol version`
+          )));
+        }
       });
 
       this.client.on('reconnect', () => {
