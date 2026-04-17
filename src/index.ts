@@ -122,22 +122,42 @@ program
     }
   });
 
+function serviceAction(action: 'start' | 'stop' | 'restart' | 'status'): void {
+  const { execSync } = require('child_process');
+  const fs = require('fs');
+  const isSystemd = fs.existsSync('/run/systemd/system');
+  const cmd = isSystemd
+    ? `sudo systemctl ${action} mbus2mqtt`
+    : `rc-service mbus2mqtt ${action}`;
+  try {
+    execSync(cmd, { stdio: 'inherit' });
+    if (action !== 'status') {
+      const msg = { start: 'gestartet', stop: 'gestoppt', restart: 'neu gestartet' }[action];
+      console.log(`  ✅ mbus2mqtt ${msg}`);
+    }
+  } catch {
+    console.log(`  ❌ ${action} fehlgeschlagen — evtl. sudo nötig?`);
+  }
+}
+
+program
+  .command('start')
+  .description('Dienst starten')
+  .action(() => serviceAction('start'));
+
+program
+  .command('stop')
+  .description('Dienst stoppen')
+  .action(() => serviceAction('stop'));
+
 program
   .command('restart')
   .description('Dienst neu starten')
-  .action(async () => {
-    const { execSync } = require('child_process');
-    const fs = require('fs');
-    try {
-      if (fs.existsSync('/run/systemd/system')) {
-        execSync('sudo systemctl restart mbus2mqtt', { stdio: 'inherit' });
-      } else {
-        execSync('rc-service mbus2mqtt restart', { stdio: 'inherit' });
-      }
-      console.log('  ✅ mbus2mqtt neu gestartet');
-    } catch {
-      console.log('  ❌ Neustart fehlgeschlagen — evtl. sudo nötig?');
-    }
-  });
+  .action(() => serviceAction('restart'));
+
+program
+  .command('status')
+  .description('Dienst-Status anzeigen')
+  .action(() => serviceAction('status'));
 
 program.parse();
