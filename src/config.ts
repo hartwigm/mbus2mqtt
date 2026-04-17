@@ -37,10 +37,12 @@ function validate(cfg: Partial<Config>, filePath: string): Config {
   return {
     property: cfg.property,
     mqtt: {
-      broker: cfg.mqtt!.broker,
-      username: cfg.mqtt!.username || '',
-      password: cfg.mqtt!.password || '',
-      client_id: cfg.mqtt!.client_id || `mbus2mqtt-${cfg.property}`,
+      broker: String(cfg.mqtt!.broker),
+      // YAML parses unquoted numeric values (e.g. password: 123456) as numbers;
+      // mqtt.js requires strings or the CONNECT packet gets malformed.
+      username: cfg.mqtt!.username != null ? String(cfg.mqtt!.username) : '',
+      password: cfg.mqtt!.password != null ? String(cfg.mqtt!.password) : '',
+      client_id: cfg.mqtt!.client_id ? String(cfg.mqtt!.client_id) : `mbus2mqtt-${cfg.property}`,
     },
     ports: cfg.ports!,
     devices: cfg.devices || [],
