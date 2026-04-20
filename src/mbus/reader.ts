@@ -30,22 +30,29 @@ function normalizeUnit(raw: string): string {
   return UNIT_MAP[raw] || raw;
 }
 
+function unitMatchesMedium(unit: string, medium: string): boolean {
+  if (medium === 'heat' || medium === 'electricity') {
+    return unit.startsWith('Energy ');
+  }
+  if (medium === 'water' || medium === 'warm_water' || medium === 'gas') {
+    return unit.startsWith('Volume ') && !unit.startsWith('Volume flow');
+  }
+  return false;
+}
+
 function findPrimaryValue(records: MbusDataRecord[], medium: string): { value: number; unit: string } | null {
-  // First instantaneous value with StorageNumber 0 is typically the current total
+  // Current total: Instantaneous value, StorageNumber 0, Unit matching the medium.
+  // Filter is required because some meters emit the Fabrication number as the
+  // first Instantaneous/StorageNumber-0 record — it would otherwise win.
   const primary = records.find(r =>
     r.Function === 'Instantaneous value' &&
     r.StorageNumber === 0 &&
-    typeof r.Value === 'number'
+    typeof r.Value === 'number' &&
+    unitMatchesMedium(r.Unit, medium)
   );
 
   if (primary && typeof primary.Value === 'number') {
     return { value: primary.Value, unit: normalizeUnit(primary.Unit) };
-  }
-
-  // Fallback: first numeric value
-  const fallback = records.find(r => typeof r.Value === 'number');
-  if (fallback && typeof fallback.Value === 'number') {
-    return { value: fallback.Value, unit: normalizeUnit(fallback.Unit) };
   }
 
   return null;

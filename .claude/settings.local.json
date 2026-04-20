@@ -1,0 +1,28 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx tsc:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(ssh:*)",
+      "Bash(npm run:*)",
+      "Bash(find /c/claude/houseai/backend -name *.py -type f)",
+      "Bash(find /c/claude/houseai/backend/app -name *.py -type f)",
+      "Bash(grep -r \"Europe/Berlin\\\\|timezone\\\\|TZ=\" /c/claude/mbus2mqtt /c/claude/houseai/backend --include=*.ts --include=*.py --include=*.yml --include=*.yaml)",
+      "Bash(xargs grep:*)",
+      "Bash(grep -n \"toLocaleString\\\\|formatCurrency\" /c/claude/houseai/frontend/app/\\\\\\(dashboard\\\\\\)/units/[id]/page.tsx)",
+      "Bash(sed:*)",
+      "Bash(sshpass:*)",
+      "Bash(pip install:*)",
+      "Bash(choco list:*)",
+      "Bash(docker info:*)",
+      "Bash(bash deploy/rpi/build-image.sh 2>&1)",
+      "Bash(bash deploy/rpi/build-image.sh)",
+      "Bash(bash deploy/rpi/build-image.sh M47 2>&1)",
+      "Bash(bash deploy/rpi/build-image.sh M47)",
+      "Bash(grep -E \"\\\\.\\(ts|js\\)$\")",
+      "Bash(wc:*)"
+    ]
+  }
+}
