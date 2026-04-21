@@ -21,6 +21,12 @@ export interface MqttConfig {
   client_id?: string;
 }
 
+export interface WebConfig {
+  enabled: boolean;
+  port: number;
+  bind: string;
+}
+
 export interface Config {
   property: string;
   mqtt: MqttConfig;
@@ -32,6 +38,7 @@ export interface Config {
     file?: string;
   };
   state_file: string;
+  web: WebConfig;
 }
 
 export interface MeterReading {

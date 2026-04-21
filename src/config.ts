@@ -52,5 +52,10 @@ function validate(cfg: Partial<Config>, filePath: string): Config {
       file: cfg.logging?.file,
     },
     state_file: cfg.state_file || '/var/lib/mbus2mqtt/state.json',
+    web: {
+      enabled: cfg.web?.enabled ?? true,
+      port: cfg.web?.port ?? 8080,
+      bind: cfg.web?.bind ?? '0.0.0.0',
+    },
   };
 }

@@ -3,6 +3,7 @@ import { PortManager } from '../mbus/port-manager';
 import { MqttPublisher } from '../mqtt/client';
 import { ReadingsStore } from '../store/readings-store';
 import { Scheduler } from '../scheduler/scheduler';
+import { WebServer } from '../web/server';
 import { getLogger } from '../util/logger';
 
 export async function cmdRun(config: Config): Promise<void> {
@@ -13,11 +14,15 @@ export async function cmdRun(config: Config): Promise<void> {
   const mqttClient = new MqttPublisher(config.mqtt);
   const store = new ReadingsStore(config.state_file);
   const scheduler = new Scheduler(config, portManager, mqttClient, store);
+  const webServer = config.web.enabled
+    ? new WebServer(config, portManager, store, scheduler)
+    : null;
 
   // Graceful shutdown
   const shutdown = async () => {
     log.info('Shutting down...');
     scheduler.stop();
+    if (webServer) await webServer.stop();
     await portManager.disconnectAll();
     await mqttClient.disconnect();
     store.save();
@@ -33,6 +38,14 @@ export async function cmdRun(config: Config): Promise<void> {
     await mqttClient.connect();
     await scheduler.publishDiscovery();
     scheduler.start();
+
+    if (webServer) {
+      try {
+        await webServer.start();
+      } catch (err) {
+        log.error(`Web UI failed to start: ${err}`);
+      }
+    }
 
     // Re-publish discovery every 6 hours
     setInterval(() => {

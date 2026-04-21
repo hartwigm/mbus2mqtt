@@ -74,3 +74,10 @@ logging:
   file: "/var/log/mbus2mqtt.log"
 
 state_file: "/var/lib/mbus2mqtt/state.json"
+
+# Eingebaute Web-UI (Geräte-Übersicht + Rescan für Vor-Ort-Termine)
+# Erreichbar unter http://<host>:<port>/
+web:
+  enabled: true
+  port: 8080
+  bind: "0.0.0.0"
