@@ -74,42 +74,42 @@ export class WebServer {
   }
 
   private async handle(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
-    const url = req.url || '/';
+    const rawUrl = req.url || '/';
     const method = req.method || 'GET';
     const ip = this.auth.getClientIp(req);
+    const parsed = new URL(rawUrl, 'http://localhost');
+    const pathname = parsed.pathname;
 
     // Shortcut: ?pw=<password> in the URL. On match, issue a session cookie
     // and 303 to /, so the password isn't kept in history past the first hit
-    // and /login?pw=... doesn't just reshow the login form.
-    if (method === 'GET') {
-      const parsed = new URL(url, 'http://localhost');
-      if (parsed.searchParams.has('pw') && !this.auth.isAuthenticated(req)) {
-        const pw = parsed.searchParams.get('pw') || '';
-        if (this.auth.verifyPassword(pw)) {
-          const { cookie } = this.auth.createSession(ip);
-          this.auth.logAttempt(ip, 'LOGIN_SUCCESS', 'via URL');
-          res.writeHead(303, { 'set-cookie': cookie, location: '/' });
-          res.end();
-          return;
-        }
-        this.auth.logAttempt(ip, 'LOGIN_FAILURE', 'via URL');
-        // fall through — user will see /login redirect or 401
+    // and /login?pw=... doesn't just reshow the login form. Also runs when
+    // the caller already has a session so an explicit ?pw= can refresh it.
+    if (method === 'GET' && parsed.searchParams.has('pw')) {
+      const pw = parsed.searchParams.get('pw') || '';
+      if (this.auth.verifyPassword(pw)) {
+        const { cookie } = this.auth.createSession(ip);
+        this.auth.logAttempt(ip, 'LOGIN_SUCCESS', 'via URL');
+        res.writeHead(303, { 'set-cookie': cookie, location: '/' });
+        res.end();
+        return;
       }
+      this.auth.logAttempt(ip, 'LOGIN_FAILURE', 'via URL');
+      // fall through — user will see /login redirect or 401
     }
 
     // Login endpoints — no auth required
-    if (method === 'GET' && url === '/login') {
+    if (method === 'GET' && pathname === '/login') {
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
       res.end(loginHtml());
       return;
     }
 
-    if (method === 'POST' && url === '/login') {
+    if (method === 'POST' && pathname === '/login') {
       await this.handleLogin(req, res, ip);
       return;
     }
 
-    if (method === 'POST' && url === '/logout') {
+    if (method === 'POST' && pathname === '/logout') {
       const { cookie, sid } = this.auth.destroySession(req);
       if (sid) this.auth.logAttempt(ip, 'LOGOUT');
       res.writeHead(200, { 'set-cookie': cookie, 'content-type': 'application/json' });
@@ -119,7 +119,7 @@ export class WebServer {
 
     // All other routes require auth
     if (!this.auth.isAuthenticated(req)) {
-      if (url.startsWith('/api/')) {
+      if (pathname.startsWith('/api/')) {
         this.json(res, 401, { error: 'not authenticated' });
       } else {
         res.writeHead(302, { location: '/login' });
@@ -128,18 +128,18 @@ export class WebServer {
       return;
     }
 
-    if (method === 'GET' && (url === '/' || url === '/index.html')) {
+    if (method === 'GET' && (pathname === '/' || pathname === '/index.html')) {
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
       res.end(INDEX_HTML);
       return;
     }
 
-    if (method === 'GET' && url === '/api/devices') {
+    if (method === 'GET' && pathname === '/api/devices') {
       this.json(res, 200, this.devicesPayload());
       return;
     }
 
-    if (method === 'POST' && url === '/api/scan') {
+    if (method === 'POST' && pathname === '/api/scan') {
       if (this.job.status === 'running') {
         this.json(res, 409, { error: 'Scan läuft bereits' });
         return;
@@ -149,12 +149,12 @@ export class WebServer {
       return;
     }
 
-    if (method === 'GET' && url === '/api/scan') {
+    if (method === 'GET' && pathname === '/api/scan') {
       this.json(res, 200, this.job);
       return;
     }
 
-    if (method === 'POST' && url === '/api/restart') {
+    if (method === 'POST' && pathname === '/api/restart') {
       this.auth.logAttempt(ip, 'LOGOUT', 'RESTART requested');
       this.json(res, 202, { status: 'restarting' });
       // Give the response a tick to flush before the process dies
@@ -162,7 +162,7 @@ export class WebServer {
       return;
     }
 
-    if (method === 'POST' && url === '/api/update') {
+    if (method === 'POST' && pathname === '/api/update') {
       this.auth.logAttempt(ip, 'LOGOUT', 'UPDATE requested');
       this.json(res, 202, { status: 'updating' });
       setTimeout(() => this.triggerUpdate(), 200);
