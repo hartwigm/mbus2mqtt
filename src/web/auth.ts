@@ -76,7 +76,7 @@ export class AuthManager {
     this.sessions.set(sid, { createdAt: now, expiresAt: now + SESSION_TTL_MS, ip });
     this.pruneExpired();
     const maxAge = Math.floor(SESSION_TTL_MS / 1000);
-    const cookie = `${COOKIE_NAME}=${sid}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${maxAge}`;
+    const cookie = `${COOKIE_NAME}=${sid}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${maxAge}`;
     return { sid, cookie };
   }
 
@@ -85,7 +85,7 @@ export class AuthManager {
     if (sid) this.sessions.delete(sid);
     return {
       sid,
-      cookie: `${COOKIE_NAME}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0`,
+      cookie: `${COOKIE_NAME}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0`,
     };
   }
 
