@@ -7,6 +7,11 @@ export function haDiscoveryTopic(property: string, deviceId: string): string {
   return `homeassistant/sensor/${uid}/config`;
 }
 
+export function haSubDiscoveryTopic(property: string, deviceId: string, subKey: string): string {
+  const uid = `mbus2mqtt_${property}_${deviceId}_${subKey}`.replace(/[^a-zA-Z0-9_]/g, '_');
+  return `homeassistant/sensor/${uid}/config`;
+}
+
 export function houseAiTopic(property: string, deviceId: string): string {
   return `property/${property}/meters/${deviceId}`;
 }

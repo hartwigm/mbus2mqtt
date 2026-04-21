@@ -29,6 +29,13 @@ export async function cmdRead(config: Config, deviceId: string): Promise<void> {
     console.log(`  Value:     ${reading.value} ${reading.unit}`);
     console.log(`  Timestamp: ${reading.timestamp}`);
 
+    if (reading.attributes && Object.keys(reading.attributes).length > 0) {
+      console.log(`\n  Attributes (für HA):`);
+      for (const [k, v] of Object.entries(reading.attributes)) {
+        console.log(`    ${k.padEnd(22)} ${v}`);
+      }
+    }
+
     if (reading.raw_records) {
       console.log(`\n  All records:`);
       for (const rec of reading.raw_records) {

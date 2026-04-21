@@ -2,7 +2,7 @@ import { Config, DeviceConfig, MeterReading } from '../types';
 import { PortManager } from '../mbus/port-manager';
 import { MqttPublisher } from '../mqtt/client';
 import { ReadingsStore } from '../store/readings-store';
-import { buildDiscovery, normalizeToHAUnit } from '../mqtt/ha-discovery';
+import { buildDiscovery, buildSubDiscoveries, normalizeToHAUnit } from '../mqtt/ha-discovery';
 import { haStateTopic, houseAiTopic } from '../mqtt/topics';
 import { shouldPublishHA, shouldPublishHouseAiHourly, isDailyWindow } from './strategies';
 import { getLogger } from '../util/logger';
@@ -31,7 +31,11 @@ export class Scheduler {
     for (const device of this.config.devices) {
       const disc = buildDiscovery(this.config.property, device);
       await this.mqttClient.publish(disc.topic, disc.payload, true);
-      log.info(`Published HA discovery for ${device.name}`);
+      const subs = buildSubDiscoveries(this.config.property, device);
+      for (const sub of subs) {
+        await this.mqttClient.publish(sub.topic, sub.payload, true);
+      }
+      log.info(`Published HA discovery for ${device.name}${subs.length ? ` (+${subs.length} sub-sensors)` : ''}`);
     }
   }
 
@@ -85,6 +89,7 @@ export class Scheduler {
           medium: reading.medium,
           name: reading.name,
           timestamp: now,
+          attributes: reading.attributes || {},
         };
 
         if (shouldPublishHA(state, valueChanged)) {

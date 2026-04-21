@@ -41,6 +41,7 @@ export interface MeterReading {
   value: number;
   unit: string;
   timestamp: string;
+  attributes?: Record<string, number>;
   raw_records?: Record<string, unknown>[];
 }
 

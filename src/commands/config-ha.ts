@@ -1,7 +1,7 @@
 import { Config } from '../types';
 import { MqttPublisher } from '../mqtt/client';
-import { buildDiscovery } from '../mqtt/ha-discovery';
-import { haStateTopic, haDiscoveryTopic } from '../mqtt/topics';
+import { buildDiscovery, buildSubDiscoveries, getSubSensors } from '../mqtt/ha-discovery';
+import { haStateTopic, haDiscoveryTopic, haSubDiscoveryTopic } from '../mqtt/topics';
 import { getLogger } from '../util/logger';
 
 export async function cmdConfigHA(config: Config, opts: { clean?: boolean; reset?: boolean }): Promise<void> {
@@ -72,11 +72,15 @@ function showConfig(config: Config): void {
 async function cleanDiscovery(mqttClient: MqttPublisher, config: Config): Promise<void> {
   console.log(`  Alte Discovery-Messages löschen...`);
 
-  // Clean current property topics
+  // Clean current property topics (main + sub-sensors)
   for (const device of config.devices) {
     const topic = haDiscoveryTopic(config.property, device.secondary_address);
     await mqttClient.publish(topic, '', true);
     console.log(`    ✅ ${topic}`);
+    for (const sub of getSubSensors(device.medium)) {
+      const subTopic = haSubDiscoveryTopic(config.property, device.secondary_address, sub.key);
+      await mqttClient.publish(subTopic, '', true);
+    }
   }
 
   // Clean common case-variants (BT6 vs bt6, M47 vs m47, etc.)
@@ -87,6 +91,10 @@ async function cleanDiscovery(mqttClient: MqttPublisher, config: Config): Promis
       const topic = haDiscoveryTopic(variant, device.secondary_address);
       await mqttClient.publish(topic, '', true);
       console.log(`    ✅ ${topic} (alte Variante)`);
+      for (const sub of getSubSensors(device.medium)) {
+        const subTopic = haSubDiscoveryTopic(variant, device.secondary_address, sub.key);
+        await mqttClient.publish(subTopic, '', true);
+      }
 
       // Also clean old state topics
       const stateTopic = haStateTopic(variant, device.secondary_address);
@@ -102,7 +110,12 @@ async function publishDiscovery(mqttClient: MqttPublisher, config: Config): Prom
   for (const device of config.devices) {
     const disc = buildDiscovery(config.property, device);
     await mqttClient.publish(disc.topic, disc.payload, true);
-    console.log(`    ✅ ${device.name} → ${disc.topic}`);
+    const subs = buildSubDiscoveries(config.property, device);
+    for (const sub of subs) {
+      await mqttClient.publish(sub.topic, sub.payload, true);
+    }
+    const suffix = subs.length ? ` (+${subs.length} Sub-Sensoren)` : '';
+    console.log(`    ✅ ${device.name} → ${disc.topic}${suffix}`);
   }
   console.log(`  ✅ Discovery gesendet`);
 }

@@ -58,6 +58,108 @@ function findPrimaryValue(records: MbusDataRecord[], medium: string): { value: n
   return null;
 }
 
+function round(n: number, precision = 10): number {
+  return parseFloat(n.toPrecision(precision));
+}
+
+function volumeFactorToM3(unit: string): number | null {
+  if (unit.startsWith('Volume flow')) return null;
+  if (!unit.startsWith('Volume ')) return null;
+  if (unit.includes('my m^3')) return 1e-6;
+  if (unit.includes('m m^3')) return 1e-3;
+  if (unit.includes('10 m^3')) return 10;
+  if (unit.includes('100 m^3')) return 100;
+  if (unit.includes('k m^3')) return 1000;
+  if (unit.includes('m^3')) return 1;
+  return null;
+}
+
+function volumeFlowFactorToM3h(unit: string): number | null {
+  if (!unit.startsWith('Volume flow')) return null;
+  if (unit.includes('m m^3/h')) return 1e-3;
+  if (unit.includes('my m^3/h')) return 1e-6;
+  if (unit.includes('m^3/h')) return 1;
+  return null;
+}
+
+function energyFactorToKwh(unit: string): number | null {
+  if (!unit.startsWith('Energy')) return null;
+  if (unit.includes('MWh')) return 1000;
+  if (unit.includes('100 kWh')) return 100;
+  if (unit.includes('10 kWh')) return 10;
+  if (unit.includes('kWh')) return 1;
+  if (unit.includes('100 Wh')) return 0.1;
+  if (unit.includes('10 Wh')) return 0.01;
+  if (unit.includes('Wh')) return 1e-3;
+  if (unit.includes('kJ')) return 1 / 3600;
+  if (unit.includes('J')) return 1 / 3_600_000;
+  return null;
+}
+
+// Only fill a slot once — first matching record wins. Meters often repeat
+// records (e.g. trailing zero-filled placeholders); we want the real value.
+function setOnce(obj: Record<string, number>, key: string, value: number): void {
+  if (obj[key] === undefined) obj[key] = value;
+}
+
+function extractAttributes(records: MbusDataRecord[], medium: string): Record<string, number> {
+  const attrs: Record<string, number> = {};
+  if (medium !== 'heat') return attrs;
+
+  for (const r of records) {
+    if (typeof r.Value !== 'number') continue;
+    const unit = r.Unit || '';
+    const sn = r.StorageNumber ?? 0;
+    const fn = r.Function;
+    const isInst = fn === 'Instantaneous value';
+    const isMax = fn === 'Maximum value';
+    if (!isInst && !isMax) continue;
+
+    const volF = volumeFactorToM3(unit);
+    if (volF !== null && isInst) {
+      const v = round(r.Value * volF);
+      if (sn === 0) setOnce(attrs, 'volume_m3', v);
+      else if (sn === 1) setOnce(attrs, 'volume_previous_m3', v);
+      continue;
+    }
+
+    const flowF = volumeFlowFactorToM3h(unit);
+    if (flowF !== null) {
+      const v = round(r.Value * flowF);
+      if (isMax) setOnce(attrs, 'flow_max_m3h', v);
+      else setOnce(attrs, 'flow_m3h', v);
+      continue;
+    }
+
+    const enF = energyFactorToKwh(unit);
+    if (enF !== null && isInst && sn === 1) {
+      setOnce(attrs, 'energy_previous_kwh', round(r.Value * enF));
+      continue;
+    }
+
+    if (unit.startsWith('Power (kW)')) {
+      const v = round(r.Value * 1000);
+      if (isMax) setOnce(attrs, 'power_max_w', v);
+      else setOnce(attrs, 'power_w', v);
+    } else if (unit.startsWith('Power (W)')) {
+      if (isMax) setOnce(attrs, 'power_max_w', r.Value);
+      else setOnce(attrs, 'power_w', r.Value);
+    } else if (unit.startsWith('Flow temperature')) {
+      setOnce(attrs, 'flow_temp_c', r.Value);
+    } else if (unit.startsWith('Return temperature')) {
+      setOnce(attrs, 'return_temp_c', r.Value);
+    } else if (unit.startsWith('Temperature Difference')) {
+      const factor = unit.includes('1e-2') ? 0.01 : unit.includes('1e-3') ? 0.001 : 1;
+      setOnce(attrs, 'temp_diff_k', round(r.Value * factor));
+    } else if (unit.startsWith('On time')) {
+      setOnce(attrs, 'on_time_days', r.Value);
+    } else if (unit === 'Error flags') {
+      setOnce(attrs, 'error_flags', r.Value);
+    }
+  }
+  return attrs;
+}
+
 export async function readDevice(
   connection: MbusConnection,
   device: DeviceConfig
@@ -85,6 +187,8 @@ export async function readDevice(
 
   log.debug(`Read ${device.name}: ${primary.value} ${primary.unit} (factor ${factor} → ${value} ${unit})`);
 
+  const attributes = extractAttributes(records, device.medium);
+
   return {
     device_id: device.secondary_address,
     name: device.name,
@@ -92,6 +196,7 @@ export async function readDevice(
     value,
     unit,
     timestamp: new Date().toISOString(),
+    attributes,
     raw_records: records as unknown as Record<string, unknown>[],
   };
 }
