@@ -25,6 +25,8 @@ export interface WebConfig {
   enabled: boolean;
   port: number;
   bind: string;
+  password: string;
+  auth_log: string;
 }
 
 export interface Config {

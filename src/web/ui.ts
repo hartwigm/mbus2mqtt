@@ -1,3 +1,40 @@
+export function loginHtml(error?: string): string {
+  const msg = error
+    ? `<div class="err">${error.replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c] as string))}</div>`
+    : '';
+  return `<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>mbus2mqtt — Login</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font-family: system-ui, sans-serif; margin: 0; display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+  .card { padding: 2rem; border: 1px solid #ccc; border-radius: 8px; min-width: 280px; }
+  @media (prefers-color-scheme: dark) { .card { border-color: #444; } }
+  h1 { font-size: 1.1rem; margin: 0 0 1rem; }
+  label { display: block; font-size: .85rem; margin-bottom: .3rem; color: #666; }
+  input { width: 100%; padding: .5rem; font-size: 1rem; box-sizing: border-box; border: 1px solid #aaa; border-radius: 4px; background: transparent; color: inherit; }
+  button { margin-top: 1rem; width: 100%; padding: .6rem; font-size: 1rem; border: 1px solid #666; background: #f5f5f5; cursor: pointer; border-radius: 4px; }
+  @media (prefers-color-scheme: dark) { button { background: #333; color: #eee; border-color: #555; } }
+  .err { padding: .5rem; margin-bottom: 1rem; background: #f8d7da; color: #721c24; border-radius: 4px; font-size: .9rem; }
+  @media (prefers-color-scheme: dark) { .err { background: #3a1e22; color: #e09aa0; } }
+</style>
+</head>
+<body>
+  <form class="card" method="POST" action="/login" autocomplete="off">
+    <h1>mbus2mqtt</h1>
+    ${msg}
+    <label for="pw">Passwort</label>
+    <input id="pw" name="password" type="password" autofocus required>
+    <button type="submit">Anmelden</button>
+  </form>
+</body>
+</html>
+`;
+}
+
 export const INDEX_HTML = `<!doctype html>
 <html lang="de">
 <head>
@@ -48,7 +85,10 @@ export const INDEX_HTML = `<!doctype html>
   <div class="bar">
     <button id="refresh">Aktualisieren</button>
     <button id="scan">Rescan</button>
+    <button id="restart">Neustart</button>
+    <button id="update">Update</button>
     <span id="scan-status"></span>
+    <span style="margin-left:auto"><button id="logout">Abmelden</button></span>
   </div>
 
   <div class="section">
@@ -169,6 +209,49 @@ function renderScan(job) {
 
 $('#refresh').addEventListener('click', loadDevices);
 $('#scan').addEventListener('click', startScan);
+$('#logout').addEventListener('click', async () => {
+  await fetch('/logout', { method: 'POST' });
+  location.href = '/login';
+});
+
+async function waitForServer(maxWaitMs) {
+  const deadline = Date.now() + maxWaitMs;
+  while (Date.now() < deadline) {
+    try {
+      const r = await fetch('/api/devices', { cache: 'no-store' });
+      if (r.ok) return true;
+      if (r.status === 401) { location.href = '/login'; return true; }
+    } catch (_) { /* server down, keep polling */ }
+    await new Promise(res => setTimeout(res, 1500));
+  }
+  return false;
+}
+
+$('#restart').addEventListener('click', async () => {
+  if (!confirm('Dienst neu starten?')) return;
+  $('#scan-status').innerHTML = '<span class="status"><span class="spinner"></span>Neustart läuft…</span>';
+  await fetch('/api/restart', { method: 'POST' }).catch(() => {});
+  const ok = await waitForServer(60000);
+  if (ok) {
+    $('#scan-status').innerHTML = '<span class="status ok">Dienst läuft wieder</span>';
+    await loadDevices();
+  } else {
+    $('#scan-status').innerHTML = '<span class="status err">Dienst antwortet nicht — bitte manuell prüfen</span>';
+  }
+});
+
+$('#update').addEventListener('click', async () => {
+  if (!confirm('mbus2mqtt von GitHub aktualisieren und neu starten?\\n(Kann 1–3 Minuten dauern)')) return;
+  $('#scan-status').innerHTML = '<span class="status"><span class="spinner"></span>Update läuft — Dienst wird gestoppt, gebaut und neu gestartet…</span>';
+  await fetch('/api/update', { method: 'POST' }).catch(() => {});
+  const ok = await waitForServer(5 * 60 * 1000);
+  if (ok) {
+    $('#scan-status').innerHTML = '<span class="status ok">Update abgeschlossen — Dienst läuft</span>';
+    await loadDevices();
+  } else {
+    $('#scan-status').innerHTML = '<span class="status err">Update-Timeout — per SSH prüfen: <code>journalctl -u mbus2mqtt -f</code></span>';
+  }
+});
 
 // On load: show devices + any recent scan result
 loadDevices().catch(e => $('#sub').textContent = 'Fehler: ' + e.message);

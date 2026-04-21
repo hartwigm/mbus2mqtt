@@ -6,12 +6,13 @@
 # One-liner:
 #   curl -fsSL https://raw.githubusercontent.com/hartwigm/mbus2mqtt/main/deploy/rpi/setup-rpi.sh | sudo bash
 #
-# Usage: sudo bash setup-rpi.sh [PROPERTY_NAME]
-# Example: sudo bash setup-rpi.sh M47
+# Usage: sudo bash setup-rpi.sh [PROPERTY_NAME] [WEB_PASSWORD]
+# Example: sudo bash setup-rpi.sh M47 2412
 #
 set -e
 
 PROPERTY="${1:-M47}"
+WEB_PASSWORD="${2:-2412}"
 INSTALL_DIR="/opt/mbus2mqtt"
 CONFIG_DIR="/etc/mbus2mqtt"
 STATE_DIR="/var/lib/mbus2mqtt"
@@ -26,7 +27,8 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
 
 echo -e "${GREEN}=== mbus2mqtt Raspberry Pi Setup ===${NC}"
-echo "  Property: $PROPERTY"
+echo "  Property:     $PROPERTY"
+echo "  Web-Passwort: $WEB_PASSWORD"
 echo ""
 
 # Node.js — detect architecture and install accordingly
@@ -82,6 +84,17 @@ if [ ! -f "$CONFIG_DIR/config.yaml" ]; then
   sed -i "s/^property:.*/property: \"${PROPERTY}\"/" "$CONFIG_DIR/config.yaml"
   sed -i "s/mbus2mqtt-M47/mbus2mqtt-${PROPERTY}/" "$CONFIG_DIR/config.yaml"
 fi
+# Apply web password from the setup arg (overrides existing value). Uses
+# js-yaml so it only touches web.password, not mqtt.password.
+WEB_PASSWORD="$WEB_PASSWORD" node -e '
+const fs = require("fs");
+const yaml = require("js-yaml");
+const path = process.argv[1];
+const cfg = yaml.load(fs.readFileSync(path, "utf-8")) || {};
+cfg.web = cfg.web || {};
+cfg.web.password = process.env.WEB_PASSWORD;
+fs.writeFileSync(path, yaml.dump(cfg, { lineWidth: 120, noRefs: true }));
+' "$CONFIG_DIR/config.yaml"
 
 # systemd service (replace __NODE_PATH__ placeholder)
 NODE_PATH=$(which node)

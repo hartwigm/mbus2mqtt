@@ -1,11 +1,15 @@
 import * as http from 'http';
+import * as fs from 'fs';
+import * as path from 'path';
+import { spawn } from 'child_process';
 import { Config } from '../types';
 import { PortManager } from '../mbus/port-manager';
 import { ReadingsStore } from '../store/readings-store';
 import { Scheduler } from '../scheduler/scheduler';
 import { scanAllPorts, ScanResult } from '../mbus/scanner';
 import { getLogger } from '../util/logger';
-import { INDEX_HTML } from './ui';
+import { INDEX_HTML, loginHtml } from './ui';
+import { AuthManager } from './auth';
 
 type ScanState = 'idle' | 'running' | 'done' | 'error';
 
@@ -30,6 +34,7 @@ export class WebServer {
   private portManager: PortManager;
   private store: ReadingsStore;
   private scheduler: Scheduler;
+  private auth: AuthManager;
   private job: ScanJob = { status: 'idle', started_at: '', entries: [] };
 
   constructor(config: Config, portManager: PortManager, store: ReadingsStore, scheduler: Scheduler) {
@@ -37,6 +42,7 @@ export class WebServer {
     this.portManager = portManager;
     this.store = store;
     this.scheduler = scheduler;
+    this.auth = new AuthManager(config.web.password, config.web.auth_log);
   }
 
   async start(): Promise<void> {
@@ -70,6 +76,38 @@ export class WebServer {
   private async handle(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
     const url = req.url || '/';
     const method = req.method || 'GET';
+    const ip = this.auth.getClientIp(req);
+
+    // Login endpoints — no auth required
+    if (method === 'GET' && url === '/login') {
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+      res.end(loginHtml());
+      return;
+    }
+
+    if (method === 'POST' && url === '/login') {
+      await this.handleLogin(req, res, ip);
+      return;
+    }
+
+    if (method === 'POST' && url === '/logout') {
+      const { cookie, sid } = this.auth.destroySession(req);
+      if (sid) this.auth.logAttempt(ip, 'LOGOUT');
+      res.writeHead(200, { 'set-cookie': cookie, 'content-type': 'application/json' });
+      res.end(JSON.stringify({ ok: true }));
+      return;
+    }
+
+    // All other routes require auth
+    if (!this.auth.isAuthenticated(req)) {
+      if (url.startsWith('/api/')) {
+        this.json(res, 401, { error: 'not authenticated' });
+      } else {
+        res.writeHead(302, { location: '/login' });
+        res.end();
+      }
+      return;
+    }
 
     if (method === 'GET' && (url === '/' || url === '/index.html')) {
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
@@ -97,8 +135,70 @@ export class WebServer {
       return;
     }
 
+    if (method === 'POST' && url === '/api/restart') {
+      this.auth.logAttempt(ip, 'LOGOUT', 'RESTART requested');
+      this.json(res, 202, { status: 'restarting' });
+      // Give the response a tick to flush before the process dies
+      setTimeout(() => this.triggerRestart(), 200);
+      return;
+    }
+
+    if (method === 'POST' && url === '/api/update') {
+      this.auth.logAttempt(ip, 'LOGOUT', 'UPDATE requested');
+      this.json(res, 202, { status: 'updating' });
+      setTimeout(() => this.triggerUpdate(), 200);
+      return;
+    }
+
     res.writeHead(404, { 'content-type': 'application/json' });
     res.end(JSON.stringify({ error: 'not found' }));
+  }
+
+  private triggerRestart(): void {
+    const log = getLogger();
+    log.info('Web UI: restart requested');
+    // Detached so we survive our own SIGTERM long enough to exec systemctl;
+    // systemd/openrc will restart us right after.
+    const child = fs.existsSync('/run/systemd/system')
+      ? spawn('systemctl', ['restart', 'mbus2mqtt'], { detached: true, stdio: 'ignore' })
+      : spawn('rc-service', ['mbus2mqtt', 'restart'], { detached: true, stdio: 'ignore' });
+    child.unref();
+  }
+
+  private triggerUpdate(): void {
+    const log = getLogger();
+    const script = path.resolve(__dirname, '..', '..', 'deploy', 'update.sh');
+    if (!fs.existsSync(script)) {
+      log.error(`update.sh not found at ${script}`);
+      return;
+    }
+    log.info(`Web UI: update requested — running ${script}`);
+    // Detach fully: update.sh stops our service, rebuilds, and starts it again.
+    // We must not be a child of this process once systemctl stop fires.
+    const child = spawn('sh', [script], {
+      detached: true,
+      stdio: 'ignore',
+      cwd: path.dirname(script),
+    });
+    child.unref();
+  }
+
+  private async handleLogin(req: http.IncomingMessage, res: http.ServerResponse, ip: string): Promise<void> {
+    const body = await readBody(req, 4096);
+    const params = new URLSearchParams(body);
+    const pw = params.get('password') || '';
+
+    if (!this.auth.verifyPassword(pw)) {
+      this.auth.logAttempt(ip, 'LOGIN_FAILURE');
+      res.writeHead(401, { 'content-type': 'text/html; charset=utf-8' });
+      res.end(loginHtml('Falsches Passwort'));
+      return;
+    }
+
+    const { cookie } = this.auth.createSession(ip);
+    this.auth.logAttempt(ip, 'LOGIN_SUCCESS');
+    res.writeHead(303, { 'set-cookie': cookie, location: '/' });
+    res.end();
   }
 
   private json(res: http.ServerResponse, status: number, body: unknown): void {
@@ -194,4 +294,22 @@ export class WebServer {
 
     return entries;
   }
+}
+
+function readBody(req: http.IncomingMessage, maxBytes: number): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    let total = 0;
+    req.on('data', chunk => {
+      total += chunk.length;
+      if (total > maxBytes) {
+        reject(new Error('body too large'));
+        req.destroy();
+        return;
+      }
+      chunks.push(chunk);
+    });
+    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+    req.on('error', reject);
+  });
 }

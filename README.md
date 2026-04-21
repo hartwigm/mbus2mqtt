@@ -19,10 +19,11 @@ M-Bus to MQTT Gateway — liest Smartmeter (Wasser, Wärme, Gas, Strom) über M-
 Auf einem frisch installierten **Raspberry Pi OS Lite** (Bookworm oder Trixie):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/hartwigm/mbus2mqtt/main/deploy/rpi/setup-rpi.sh | sudo bash -s -- M47
+curl -fsSL https://raw.githubusercontent.com/hartwigm/mbus2mqtt/main/deploy/rpi/setup-rpi.sh | sudo bash -s -- M47 2412
 ```
 
-> `M47` durch den gewünschten Property-Namen ersetzen.
+> 1. Parameter: Property-Name (z.B. `M47`).
+> 2. Parameter: Passwort für die Web-UI (Default `2412`, wenn weggelassen).
 
 Unterstützt **Raspberry Pi 2/3/4/5** (armhf und arm64).
 

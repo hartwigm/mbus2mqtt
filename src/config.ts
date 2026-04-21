@@ -56,6 +56,8 @@ function validate(cfg: Partial<Config>, filePath: string): Config {
       enabled: cfg.web?.enabled ?? true,
       port: cfg.web?.port ?? 8080,
       bind: cfg.web?.bind ?? '0.0.0.0',
+      password: cfg.web?.password != null ? String(cfg.web.password) : '2412',
+      auth_log: cfg.web?.auth_log ?? '/var/log/mbus2mqtt-auth.log',
     },
   };
 }
