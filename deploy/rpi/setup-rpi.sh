@@ -48,10 +48,15 @@ if ! command -v node &>/dev/null || [ "$(node --version | cut -d. -f1 | tr -d v)
 fi
 echo "  Node.js $(node --version) ($(node -p process.arch))"
 
-# Update npm to latest
+# Update npm to latest — best-effort. Node 22's bundled npm has a known
+# self-upgrade bug on some distros ("Cannot find module 'promise-retry'");
+# the bundled version is fine for our install/build, so we don't abort.
 echo "Updating npm..."
-npm install -g npm@latest --loglevel=warn
-echo "  npm $(npm --version)"
+if npm install -g npm@latest --loglevel=warn --force 2>/dev/null; then
+  echo "  npm $(npm --version)"
+else
+  echo "  npm update skipped (using bundled $(npm --version))"
+fi
 
 # Build dependencies
 echo "Installing build dependencies..."
