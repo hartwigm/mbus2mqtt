@@ -78,6 +78,27 @@ export class WebServer {
     const method = req.method || 'GET';
     const ip = this.auth.getClientIp(req);
 
+    // Shortcut: ?pw=<password> in the URL. On match, issue a session cookie
+    // and 303 to the clean URL so the password isn't kept in history/logs
+    // past the first hit. Only triggers when not already authenticated.
+    if (method === 'GET') {
+      const parsed = new URL(url, 'http://localhost');
+      if (parsed.searchParams.has('pw') && !this.auth.isAuthenticated(req)) {
+        const pw = parsed.searchParams.get('pw') || '';
+        if (this.auth.verifyPassword(pw)) {
+          const { cookie } = this.auth.createSession(ip);
+          this.auth.logAttempt(ip, 'LOGIN_SUCCESS', 'via URL');
+          parsed.searchParams.delete('pw');
+          const cleanUrl = parsed.pathname + (parsed.search ? parsed.search : '');
+          res.writeHead(303, { 'set-cookie': cookie, location: cleanUrl });
+          res.end();
+          return;
+        }
+        this.auth.logAttempt(ip, 'LOGIN_FAILURE', 'via URL');
+        // fall through — user will see /login redirect or 401
+      }
+    }
+
     // Login endpoints — no auth required
     if (method === 'GET' && url === '/login') {
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
