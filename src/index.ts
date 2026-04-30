@@ -163,4 +163,48 @@ program
   .description('Dienst-Status anzeigen')
   .action(() => serviceAction('status'));
 
+program.addHelpText('after', `
+Befehle im Detail:
+
+  scan                    M-Bus-Geräte auf konfigurierten Ports suchen
+    -e, --extended        Alle Baudraten testen (300–921600, bis zu 80 min/Port)
+    -p, --port <alias>    Nur diesen Port scannen (z.B. usb0, usb1)
+    -a, --add             Gefundene Geräte automatisch in Config aufnehmen
+    Beispiele:
+      m2q scan
+      m2q scan -p usb1 --add
+      m2q scan -e
+
+  list                    Konfigurierte Geräte und letzte Werte anzeigen
+    -r, --read            Vor der Anzeige alle Zähler frisch lesen
+    -m, --mqtt            Gelesene Werte zusätzlich per MQTT senden (nur mit -r)
+    Beispiel:
+      m2q list -r -m
+
+  read <device-id>        Einen einzelnen Zähler per Secondary Address lesen
+    Beispiel:
+      m2q read 12345678ABCD0107
+
+  run                     Daemon starten: zyklisch lesen und per MQTT senden
+
+  update                  mbus2mqtt von GitHub aktualisieren und Dienst neu starten
+
+  setup                   USB-Adapter erkennen und Ports in der Config eintragen
+
+  test-mqtt               Alle Zähler einmal lesen und sofort per MQTT senden (Diagnose)
+
+  config-ha               Home Assistant Discovery verwalten
+    --clean               Alte retained Discovery-Messages vom Broker löschen
+    --reset               Löschen + Discovery neu senden
+
+  config                  Config-Datei im Editor öffnen ($EDITOR / nano)
+
+  start | stop | restart | status
+                          Systemd-/OpenRC-Dienst mbus2mqtt steuern
+
+Globale Optionen:
+  -c, --config <path>     Pfad zur Config-Datei
+                          (Standard: /etc/mbus2mqtt/config.yaml oder ./config.yaml)
+`);
+
 program.parse();
