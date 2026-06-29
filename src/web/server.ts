@@ -132,7 +132,8 @@ export class WebServer {
     // Open trigger for external automation (e.g. house.ai). No auth: all
     // mbus2mqtt instances live inside a VPN and are never publicly reachable,
     // and the worst an unexpected call can do is publish fresh meter readings.
-    if (method === 'POST' && pathname === '/api/trigger/readout') {
+    // GET is allowed too so it can be triggered straight from a browser bar.
+    if ((method === 'POST' || method === 'GET') && pathname === '/api/trigger/readout') {
       await this.handleTriggerReadout(res, ip);
       return;
     }

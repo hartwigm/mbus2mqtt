@@ -134,10 +134,13 @@ unter `web.password` gesetzten Passwort.
 ### HTTP-Trigger für Sofort-Lesung (Automation)
 
 Damit z. B. house.ai die Rücknahme-Lesung automatisch auslösen kann, gibt es
-einen Endpunkt ohne Login:
+einen Endpunkt ohne Login. POST oder GET, damit er auch direkt im Browser
+aufrufbar ist:
 
 ```bash
 curl -X POST http://<host>:8080/api/trigger/readout
+# oder einfach im Browser öffnen:
+#   http://<host>:8080/api/trigger/readout
 ```
 
 Es gibt bewusst keine Authentifizierung — alle mbus2mqtt-Instanzen liegen im
