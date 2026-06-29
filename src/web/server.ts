@@ -54,7 +54,7 @@ export class WebServer {
     this.portManager = portManager;
     this.store = store;
     this.scheduler = scheduler;
-    this.auth = new AuthManager(config.web.password, config.web.auth_log, config.web.trigger_token);
+    this.auth = new AuthManager(config.web.password, config.web.auth_log);
   }
 
   async start(): Promise<void> {
@@ -129,11 +129,11 @@ export class WebServer {
       return;
     }
 
-    // Token-authenticated trigger for external automation (e.g. house.ai).
-    // No session required — auth is the trigger_token from config, passed
-    // either as ?token=<token> or in the X-Trigger-Token header.
+    // Open trigger for external automation (e.g. house.ai). No auth: all
+    // mbus2mqtt instances live inside a VPN and are never publicly reachable,
+    // and the worst an unexpected call can do is publish fresh meter readings.
     if (method === 'POST' && pathname === '/api/trigger/readout') {
-      await this.handleTriggerReadout(req, res, ip, parsed);
+      await this.handleTriggerReadout(res, ip);
       return;
     }
 
@@ -278,28 +278,13 @@ export class WebServer {
     return { property: this.config.property, devices };
   }
 
-  // Token-authenticated, synchronous readout for external automation.
-  // Responds once the readout completes, with the exact values as JSON, so
-  // a caller like house.ai gets the meter readings directly in the response.
+  // Synchronous readout for external automation. Responds once the readout
+  // completes, with the exact values as JSON, so a caller like house.ai gets
+  // the meter readings directly in the response.
   private async handleTriggerReadout(
-    req: http.IncomingMessage,
     res: http.ServerResponse,
     ip: string,
-    parsed: URL,
   ): Promise<void> {
-    if (!this.auth.triggerTokenEnabled()) {
-      this.json(res, 404, { error: 'not found' });
-      return;
-    }
-
-    const header = req.headers['x-trigger-token'];
-    const token = (typeof header === 'string' && header) || parsed.searchParams.get('token') || '';
-    if (!this.auth.verifyTriggerToken(token)) {
-      this.auth.logAttempt(ip, 'LOGIN_FAILURE', 'trigger token');
-      this.json(res, 401, { error: 'invalid token' });
-      return;
-    }
-
     if (this.readout.status === 'running') {
       this.json(res, 409, { error: 'Lesung läuft bereits' });
       return;

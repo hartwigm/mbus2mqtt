@@ -16,14 +16,12 @@ interface Session {
 export class AuthManager {
   private password: string;
   private logPath: string;
-  private triggerToken: string;
   private sessions = new Map<string, Session>();
   private logWarned = false;
 
-  constructor(password: string, logPath: string, triggerToken = '') {
+  constructor(password: string, logPath: string) {
     this.password = password;
     this.logPath = logPath;
-    this.triggerToken = triggerToken;
     this.ensureLogDir();
   }
 
@@ -66,18 +64,10 @@ export class AuthManager {
 
   // Constant-time compare to blunt timing attacks on the password.
   verifyPassword(attempt: string): boolean {
-    return constantTimeEqual(attempt, this.password);
-  }
-
-  // True only if a trigger token is configured and the attempt matches it.
-  // An empty configured token disables token auth entirely.
-  verifyTriggerToken(attempt: string): boolean {
-    if (!this.triggerToken) return false;
-    return constantTimeEqual(attempt, this.triggerToken);
-  }
-
-  triggerTokenEnabled(): boolean {
-    return this.triggerToken.length > 0;
+    const a = Buffer.from(attempt, 'utf8');
+    const b = Buffer.from(this.password, 'utf8');
+    if (a.length !== b.length) return false;
+    return crypto.timingSafeEqual(a, b);
   }
 
   createSession(ip: string): { sid: string; cookie: string } {
@@ -115,12 +105,4 @@ export class AuthManager {
       }
     });
   }
-}
-
-// Constant-time string compare to blunt timing attacks on secrets.
-function constantTimeEqual(attempt: string, secret: string): boolean {
-  const a = Buffer.from(attempt, 'utf8');
-  const b = Buffer.from(secret, 'utf8');
-  if (a.length !== b.length) return false;
-  return crypto.timingSafeEqual(a, b);
 }

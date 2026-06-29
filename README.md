@@ -134,16 +134,15 @@ unter `web.password` gesetzten Passwort.
 ### HTTP-Trigger für Sofort-Lesung (Automation)
 
 Damit z. B. house.ai die Rücknahme-Lesung automatisch auslösen kann, gibt es
-einen tokenbasierten Endpunkt ohne Login. Voraussetzung: in der Config ist
-`web.trigger_token` gesetzt (leer = deaktiviert).
+einen Endpunkt ohne Login:
 
 ```bash
-# Token als Query-Parameter
-curl -X POST "http://<host>:8080/api/trigger/readout?token=<token>"
-
-# oder als Header
-curl -X POST -H "X-Trigger-Token: <token>" http://<host>:8080/api/trigger/readout
+curl -X POST http://<host>:8080/api/trigger/readout
 ```
+
+Es gibt bewusst keine Authentifizierung — alle mbus2mqtt-Instanzen liegen im
+VPN und sind nie öffentlich erreichbar; das Schlimmste, was ein unerwarteter
+Aufruf bewirkt, sind frische Zählerwerte.
 
 Der Request liest alle Zähler, sendet die exakten Stände per MQTT und antwortet
 **synchron** mit den Werten als JSON:

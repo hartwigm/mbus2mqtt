@@ -58,7 +58,6 @@ function validate(cfg: Partial<Config>, filePath: string): Config {
       bind: cfg.web?.bind ?? '0.0.0.0',
       password: cfg.web?.password != null ? String(cfg.web.password) : '2412',
       auth_log: cfg.web?.auth_log ?? '/var/log/mbus2mqtt-auth.log',
-      trigger_token: cfg.web?.trigger_token != null ? String(cfg.web.trigger_token) : '',
     },
   };
 }

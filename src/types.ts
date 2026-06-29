@@ -27,9 +27,6 @@ export interface WebConfig {
   bind: string;
   password: string;
   auth_log: string;
-  // Optional token for the unauthenticated HTTP trigger endpoint
-  // (POST /api/trigger/readout). Empty disables that endpoint.
-  trigger_token: string;
 }
 
 export interface Config {
