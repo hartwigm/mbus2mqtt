@@ -16,12 +16,14 @@ interface Session {
 export class AuthManager {
   private password: string;
   private logPath: string;
+  private triggerToken: string;
   private sessions = new Map<string, Session>();
   private logWarned = false;
 
-  constructor(password: string, logPath: string) {
+  constructor(password: string, logPath: string, triggerToken = '') {
     this.password = password;
     this.logPath = logPath;
+    this.triggerToken = triggerToken;
     this.ensureLogDir();
   }
 
@@ -64,10 +66,18 @@ export class AuthManager {
 
   // Constant-time compare to blunt timing attacks on the password.
   verifyPassword(attempt: string): boolean {
-    const a = Buffer.from(attempt, 'utf8');
-    const b = Buffer.from(this.password, 'utf8');
-    if (a.length !== b.length) return false;
-    return crypto.timingSafeEqual(a, b);
+    return constantTimeEqual(attempt, this.password);
+  }
+
+  // True only if a trigger token is configured and the attempt matches it.
+  // An empty configured token disables token auth entirely.
+  verifyTriggerToken(attempt: string): boolean {
+    if (!this.triggerToken) return false;
+    return constantTimeEqual(attempt, this.triggerToken);
+  }
+
+  triggerTokenEnabled(): boolean {
+    return this.triggerToken.length > 0;
   }
 
   createSession(ip: string): { sid: string; cookie: string } {
@@ -96,7 +106,7 @@ export class AuthManager {
     }
   }
 
-  logAttempt(ip: string, event: 'LOGIN_SUCCESS' | 'LOGIN_FAILURE' | 'LOGOUT', detail = ''): void {
+  logAttempt(ip: string, event: 'LOGIN_SUCCESS' | 'LOGIN_FAILURE' | 'LOGOUT' | 'READOUT', detail = ''): void {
     const line = `${new Date().toISOString()} ${ip.padEnd(39)} ${event}${detail ? ' ' + detail : ''}\n`;
     fs.appendFile(this.logPath, line, err => {
       if (err && !this.logWarned) {
@@ -105,4 +115,12 @@ export class AuthManager {
       }
     });
   }
+}
+
+// Constant-time string compare to blunt timing attacks on secrets.
+function constantTimeEqual(attempt: string, secret: string): boolean {
+  const a = Buffer.from(attempt, 'utf8');
+  const b = Buffer.from(secret, 'utf8');
+  if (a.length !== b.length) return false;
+  return crypto.timingSafeEqual(a, b);
 }

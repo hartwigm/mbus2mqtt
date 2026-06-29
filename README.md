@@ -9,6 +9,7 @@ M-Bus to MQTT Gateway — liest Smartmeter (Wasser, Wärme, Gas, Strom) über M-
 - Pro-Gerät konfigurierbare Baudrate (für gemischte Busse)
 - Home Assistant MQTT Auto-Discovery
 - Scheduler mit konfigurierbaren Leseintervallen pro Gerät
+- Web-UI mit Sofort-Lesung aller Zähler + HTTP-Trigger (z. B. für house.ai)
 - Persistenter State (überlebt Neustarts)
 - CLI-Tool `m2q` für Scan, Setup, Lesen und Daemon-Betrieb
 
@@ -116,6 +117,49 @@ devices:
 | `baud_rate` | Baudrate für dieses Gerät (überschreibt Port-Standard) |
 | `value_factor` | Multiplikator für Rohwert (Default: 0.001 für Wasser) |
 | `read_interval_minutes` | Leseintervall (überschreibt globalen Wert) |
+
+## Web-UI
+
+Erreichbar unter `http://<host>:<port>/` (Default Port `8080`), Login mit dem
+unter `web.password` gesetzten Passwort.
+
+- **Aktualisieren** — Geräteübersicht neu laden
+- **Sofort-Lesung & Senden** — liest *alle* Zähler sofort aus und sendet die
+  exakten Stände unmittelbar per MQTT (HA-State + house.ai-Topic). Gedacht für
+  die Wohnungs-Rücknahme, wenn der genaue Zählerstand aller Zähler zu einem
+  bestimmten Zeitpunkt benötigt wird.
+- **Rescan** — M-Bus-Ports neu scannen
+- **Neustart** / **Update** — Dienst neu starten bzw. von GitHub aktualisieren
+
+### HTTP-Trigger für Sofort-Lesung (Automation)
+
+Damit z. B. house.ai die Rücknahme-Lesung automatisch auslösen kann, gibt es
+einen tokenbasierten Endpunkt ohne Login. Voraussetzung: in der Config ist
+`web.trigger_token` gesetzt (leer = deaktiviert).
+
+```bash
+# Token als Query-Parameter
+curl -X POST "http://<host>:8080/api/trigger/readout?token=<token>"
+
+# oder als Header
+curl -X POST -H "X-Trigger-Token: <token>" http://<host>:8080/api/trigger/readout
+```
+
+Der Request liest alle Zähler, sendet die exakten Stände per MQTT und antwortet
+**synchron** mit den Werten als JSON:
+
+```json
+{
+  "status": "done",
+  "started_at": "2026-06-29T10:00:00.000Z",
+  "finished_at": "2026-06-29T10:00:08.000Z",
+  "trigger": "http",
+  "results": [
+    { "secondary_address": "20135442523B0307", "name": "WZ 20135442",
+      "medium": "water", "value": 123.456, "unit": "m³", "ok": true }
+  ]
+}
+```
 
 ## MQTT Topics
 

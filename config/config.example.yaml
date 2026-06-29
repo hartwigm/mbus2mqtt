@@ -81,3 +81,11 @@ web:
   enabled: true
   port: 8080
   bind: "0.0.0.0"
+  # password: "2412"           # Login-Passwort der Web-UI
+  # trigger_token: ""          # Token für den unauthentifizierten HTTP-Trigger
+                               # einer Sofort-Lesung (z. B. von house.ai):
+                               #   POST /api/trigger/readout?token=<token>
+                               #   oder Header  X-Trigger-Token: <token>
+                               # Liest alle Zähler sofort und sendet die
+                               # exakten Stände per MQTT; Antwort = JSON mit
+                               # den Werten. Leer = Endpunkt deaktiviert.

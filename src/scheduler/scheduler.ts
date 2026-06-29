@@ -1,4 +1,4 @@
-import { Config, DeviceConfig, MeterReading } from '../types';
+import { Config, DeviceConfig, ImmediateReadResult, MeterReading } from '../types';
 import { PortManager } from '../mbus/port-manager';
 import { MqttPublisher } from '../mqtt/client';
 import { ReadingsStore } from '../store/readings-store';
@@ -128,6 +128,96 @@ export class Scheduler {
       this.store.save();
       await this.mqttClient.publishHeartbeat();
       log.info(`Done: ${readings.length}/${due.length} OK`);
+    } finally {
+      this.reading = false;
+    }
+  }
+
+  /**
+   * Read every configured device right now and publish the exact values to
+   * MQTT immediately — both the Home Assistant state topic and the house.ai
+   * meters topic — bypassing the usual change/throttle gating. Used for
+   * apartment handover ("Rücknahme"), where the precise current meter reading
+   * of all meters must be captured on demand from the web UI or an HTTP trigger.
+   */
+  async readAllNow(): Promise<ImmediateReadResult[]> {
+    const log = getLogger();
+
+    // Don't collide with a scheduled tick; wait for it to release the lock.
+    const deadline = Date.now() + 60 * 1000;
+    while (this.reading && Date.now() < deadline) {
+      await new Promise(res => setTimeout(res, 200));
+    }
+    if (this.reading) throw new Error('Lesung läuft bereits — bitte erneut versuchen');
+
+    this.reading = true;
+    try {
+      const devices = this.config.devices;
+      log.info(`Sofort-Lesung: ${devices.length} Gerät(e)...`);
+      const readings = await this.portManager.readDevices(devices);
+      const now = new Date().toISOString();
+      const results: ImmediateReadResult[] = [];
+
+      for (const device of devices) {
+        const reading = readings.find(r => r.device_id === device.secondary_address);
+        if (!reading) {
+          const state = this.store.get(device.secondary_address);
+          this.store.update(device.secondary_address, { read_errors: state.read_errors + 1 });
+          results.push({
+            secondary_address: device.secondary_address,
+            name: device.name,
+            medium: device.medium,
+            value: null,
+            unit: null,
+            ok: false,
+          });
+          continue;
+        }
+
+        this.store.update(reading.device_id, {
+          last_value: reading.value,
+          last_unit: reading.unit,
+          last_read: now,
+          read_errors: 0,
+        });
+
+        // HA state — force publish the exact current value
+        const ha = normalizeToHAUnit(reading.value, reading.unit, reading.medium);
+        await this.mqttClient.publish(
+          haStateTopic(this.config.property, reading.device_id),
+          {
+            value: ha.value,
+            unit: ha.unit,
+            medium: reading.medium,
+            name: reading.name,
+            timestamp: now,
+            attributes: reading.attributes || {},
+          },
+          true,
+        );
+        this.store.update(reading.device_id, { last_ha_publish: now });
+
+        // house.ai — force publish the exact reading for the handover
+        await this.mqttClient.publish(
+          houseAiTopic(this.config.property, reading.device_id),
+          { value: reading.value, timestamp: now },
+        );
+
+        results.push({
+          secondary_address: device.secondary_address,
+          name: device.name,
+          medium: device.medium,
+          value: reading.value,
+          unit: reading.unit,
+          ok: true,
+        });
+      }
+
+      this.store.save();
+      await this.mqttClient.publishHeartbeat();
+      const okCount = results.filter(r => r.ok).length;
+      log.info(`Sofort-Lesung fertig: ${okCount}/${devices.length} OK`);
+      return results;
     } finally {
       this.reading = false;
     }

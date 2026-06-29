@@ -27,6 +27,9 @@ export interface WebConfig {
   bind: string;
   password: string;
   auth_log: string;
+  // Optional token for the unauthenticated HTTP trigger endpoint
+  // (POST /api/trigger/readout). Empty disables that endpoint.
+  trigger_token: string;
 }
 
 export interface Config {
@@ -65,3 +68,13 @@ export interface DeviceState {
 }
 
 export type StateStore = Record<string, DeviceState>;
+
+// Result of an on-demand readout of a single device (web UI / HTTP trigger).
+export interface ImmediateReadResult {
+  secondary_address: string;
+  name: string;
+  medium: string;
+  value: number | null;
+  unit: string | null;
+  ok: boolean;
+}

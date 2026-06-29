@@ -84,6 +84,7 @@ export const INDEX_HTML = `<!doctype html>
 
   <div class="bar">
     <button id="refresh">Aktualisieren</button>
+    <button id="readout">Sofort-Lesung &amp; Senden</button>
     <button id="scan">Rescan</button>
     <button id="restart">Neustart</button>
     <button id="update">Update</button>
@@ -96,6 +97,17 @@ export const INDEX_HTML = `<!doctype html>
     <table id="devtable">
       <thead><tr>
         <th>Name</th><th>Medium</th><th>Port</th><th class="num">Wert</th><th>Letzte Lesung</th><th>Status</th>
+      </tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <div class="section" id="readout-section" style="display:none">
+    <h2>Sofort-Lesung</h2>
+    <div id="readout-summary" class="sub"></div>
+    <table id="readouttable">
+      <thead><tr>
+        <th>Name</th><th>Medium</th><th class="num">Wert</th><th>Status</th>
       </tr></thead>
       <tbody></tbody>
     </table>
@@ -179,6 +191,68 @@ async function startScan() {
   }
 }
 
+async function startReadout() {
+  $('#readout').disabled = true;
+  $('#refresh').disabled = true;
+  $('#scan').disabled = true;
+  $('#scan-status').innerHTML = '<span class="status"><span class="spinner"></span>Lesung läuft — alle Zähler werden gelesen und gesendet…</span>';
+  try {
+    const r = await fetch('/api/readout', { method: 'POST' });
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({ error: 'HTTP ' + r.status }));
+      throw new Error(err.error || 'Lesung fehlgeschlagen');
+    }
+    while (true) {
+      await new Promise(res => setTimeout(res, 1500));
+      const s = await fetch('/api/readout').then(x => x.json());
+      if (s.status === 'done') { renderReadout(s); break; }
+      if (s.status === 'error') {
+        $('#scan-status').innerHTML = '<span class="status err">Fehler: ' + escapeHtml(s.error || 'unbekannt') + '</span>';
+        break;
+      }
+      const elapsed = Math.round((Date.now() - new Date(s.started_at).getTime()) / 1000);
+      $('#scan-status').innerHTML = '<span class="status"><span class="spinner"></span>Lesung läuft… ' + elapsed + 's</span>';
+    }
+  } catch (e) {
+    $('#scan-status').innerHTML = '<span class="status err">' + escapeHtml(e.message) + '</span>';
+  } finally {
+    $('#readout').disabled = false;
+    $('#refresh').disabled = false;
+    $('#scan').disabled = false;
+    await loadDevices();
+  }
+}
+
+function renderReadout(job) {
+  $('#readout-section').style.display = '';
+  const rows = [];
+  let okCount = 0, failCount = 0;
+  for (const e of job.results) {
+    const ok = e.ok;
+    ok ? okCount++ : failCount++;
+    const status = ok
+      ? '<span class="ok">✓ gesendet</span>'
+      : '<span class="err">✗ keine Antwort</span>';
+    rows.push(
+      '<tr>' +
+      '<td>' + escapeHtml(e.name) + '<br><span class="muted">' + e.secondary_address + '</span></td>' +
+      '<td>' + e.medium + '</td>' +
+      '<td class="num">' + fmtValue(e.value, e.unit) + '</td>' +
+      '<td>' + status + '</td>' +
+      '</tr>'
+    );
+  }
+  $('#readouttable tbody').innerHTML = rows.join('');
+  const elapsed = job.finished_at
+    ? Math.round((new Date(job.finished_at).getTime() - new Date(job.started_at).getTime()) / 1000)
+    : null;
+  const via = job.trigger === 'http' ? ' (per HTTP-Trigger)' : '';
+  $('#readout-summary').textContent =
+    okCount + ' gesendet, ' + failCount + ' ohne Antwort' +
+    (elapsed !== null ? ' (Dauer ' + elapsed + 's)' : '') + via;
+  $('#scan-status').innerHTML = '<span class="status ok">Lesung abgeschlossen — ' + okCount + ' Zähler gesendet</span>';
+}
+
 function renderScan(job) {
   $('#scan-section').style.display = '';
   const rows = [];
@@ -208,6 +282,7 @@ function renderScan(job) {
 }
 
 $('#refresh').addEventListener('click', loadDevices);
+$('#readout').addEventListener('click', startReadout);
 $('#scan').addEventListener('click', startScan);
 $('#logout').addEventListener('click', async () => {
   await fetch('/logout', { method: 'POST' });
@@ -257,6 +332,9 @@ $('#update').addEventListener('click', async () => {
 loadDevices().catch(e => $('#sub').textContent = 'Fehler: ' + e.message);
 fetch('/api/scan').then(r => r.json()).then(s => {
   if (s.status === 'done' || s.status === 'running') renderScan(s);
+});
+fetch('/api/readout').then(r => r.json()).then(s => {
+  if (s.status === 'done') renderReadout(s);
 });
 </script>
 </body>

@@ -2,7 +2,7 @@ import * as http from 'http';
 import * as fs from 'fs';
 import * as path from 'path';
 import { spawn } from 'child_process';
-import { Config } from '../types';
+import { Config, ImmediateReadResult } from '../types';
 import { PortManager } from '../mbus/port-manager';
 import { ReadingsStore } from '../store/readings-store';
 import { Scheduler } from '../scheduler/scheduler';
@@ -28,6 +28,17 @@ interface ScanJob {
   error?: string;
 }
 
+type ReadoutState = 'idle' | 'running' | 'done' | 'error';
+
+interface ReadoutJob {
+  status: ReadoutState;
+  started_at: string;
+  finished_at?: string;
+  trigger: 'web' | 'http';
+  results: ImmediateReadResult[];
+  error?: string;
+}
+
 export class WebServer {
   private server: http.Server | null = null;
   private config: Config;
@@ -36,13 +47,14 @@ export class WebServer {
   private scheduler: Scheduler;
   private auth: AuthManager;
   private job: ScanJob = { status: 'idle', started_at: '', entries: [] };
+  private readout: ReadoutJob = { status: 'idle', started_at: '', trigger: 'web', results: [] };
 
   constructor(config: Config, portManager: PortManager, store: ReadingsStore, scheduler: Scheduler) {
     this.config = config;
     this.portManager = portManager;
     this.store = store;
     this.scheduler = scheduler;
-    this.auth = new AuthManager(config.web.password, config.web.auth_log);
+    this.auth = new AuthManager(config.web.password, config.web.auth_log, config.web.trigger_token);
   }
 
   async start(): Promise<void> {
@@ -117,6 +129,14 @@ export class WebServer {
       return;
     }
 
+    // Token-authenticated trigger for external automation (e.g. house.ai).
+    // No session required — auth is the trigger_token from config, passed
+    // either as ?token=<token> or in the X-Trigger-Token header.
+    if (method === 'POST' && pathname === '/api/trigger/readout') {
+      await this.handleTriggerReadout(req, res, ip, parsed);
+      return;
+    }
+
     // All other routes require auth
     if (!this.auth.isAuthenticated(req)) {
       if (pathname.startsWith('/api/')) {
@@ -151,6 +171,22 @@ export class WebServer {
 
     if (method === 'GET' && pathname === '/api/scan') {
       this.json(res, 200, this.job);
+      return;
+    }
+
+    if (method === 'POST' && pathname === '/api/readout') {
+      if (this.readout.status === 'running') {
+        this.json(res, 409, { error: 'Lesung läuft bereits' });
+        return;
+      }
+      this.startReadoutJob('web');
+      this.auth.logAttempt(ip, 'READOUT', 'via Web-UI');
+      this.json(res, 202, { status: 'running', started_at: this.readout.started_at });
+      return;
+    }
+
+    if (method === 'GET' && pathname === '/api/readout') {
+      this.json(res, 200, this.readout);
       return;
     }
 
@@ -240,6 +276,63 @@ export class WebServer {
       };
     });
     return { property: this.config.property, devices };
+  }
+
+  // Token-authenticated, synchronous readout for external automation.
+  // Responds once the readout completes, with the exact values as JSON, so
+  // a caller like house.ai gets the meter readings directly in the response.
+  private async handleTriggerReadout(
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+    ip: string,
+    parsed: URL,
+  ): Promise<void> {
+    if (!this.auth.triggerTokenEnabled()) {
+      this.json(res, 404, { error: 'not found' });
+      return;
+    }
+
+    const header = req.headers['x-trigger-token'];
+    const token = (typeof header === 'string' && header) || parsed.searchParams.get('token') || '';
+    if (!this.auth.verifyTriggerToken(token)) {
+      this.auth.logAttempt(ip, 'LOGIN_FAILURE', 'trigger token');
+      this.json(res, 401, { error: 'invalid token' });
+      return;
+    }
+
+    if (this.readout.status === 'running') {
+      this.json(res, 409, { error: 'Lesung läuft bereits' });
+      return;
+    }
+
+    this.auth.logAttempt(ip, 'READOUT', 'via HTTP-Trigger');
+    const job = await this.runReadout('http');
+    const status = job.status === 'error' ? 500 : 200;
+    this.json(res, status, job);
+  }
+
+  private startReadoutJob(trigger: 'web' | 'http'): void {
+    this.runReadout(trigger).catch(err => {
+      getLogger().error(`Readout job fatal: ${err}`);
+    });
+  }
+
+  // Read all meters now and publish their exact values to MQTT. Updates the
+  // shared readout job so both the web UI (polling GET /api/readout) and the
+  // HTTP trigger reflect the same run.
+  private async runReadout(trigger: 'web' | 'http'): Promise<ReadoutJob> {
+    const log = getLogger();
+    this.readout = { status: 'running', started_at: new Date().toISOString(), trigger, results: [] };
+    try {
+      this.readout.results = await this.scheduler.readAllNow();
+      this.readout.status = 'done';
+    } catch (err) {
+      log.error(`Readout error: ${err}`);
+      this.readout.status = 'error';
+      this.readout.error = String(err);
+    }
+    this.readout.finished_at = new Date().toISOString();
+    return this.readout;
   }
 
   private startScanJob(): void {
