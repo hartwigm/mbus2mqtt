@@ -78,6 +78,7 @@ export const INDEX_HTML = `<!doctype html>
   @keyframes spin { to { transform: rotate(360deg); } }
   .dot { display: inline-block; width: .6rem; height: .6rem; border-radius: 50%; margin-right: .4rem; vertical-align: 0; }
   .dot-ok      { background: #2a8a2a; }
+  .dot-warn    { background: #c07000; }
   .dot-off     { background: #c02020; }
   .dot-unknown { background: #999; }
 </style>
@@ -95,6 +96,16 @@ export const INDEX_HTML = `<!doctype html>
     <button id="update">Update</button>
     <span id="scan-status"></span>
     <span style="margin-left:auto"><button id="logout">Abmelden</button></span>
+  </div>
+
+  <div class="section">
+    <h2>USB-Ports</h2>
+    <table id="porttable">
+      <thead><tr>
+        <th>Port</th><th>Pfad</th><th class="num">Baud</th><th class="num">Geräte</th><th>Letzte Lesung</th><th>Status</th>
+      </tr></thead>
+      <tbody></tbody>
+    </table>
   </div>
 
   <div class="section">
@@ -141,6 +152,7 @@ async function loadDevices() {
   const count = data.devices.length;
   $('#sub').textContent = count + ' Gerät(e) konfiguriert';
   renderMqttStatus(data.mqtt);
+  renderPorts(data.ports);
   const tbody = $('#devtable tbody');
   tbody.innerHTML = '';
   for (const d of data.devices) {
@@ -155,6 +167,36 @@ async function loadDevices() {
       '<td class="num">' + fmtValue(d.last_value, d.last_unit) + '</td>' +
       '<td>' + fmtTime(d.last_read) + '</td>' +
       '<td>' + statusCell + '</td>';
+    tbody.appendChild(tr);
+  }
+}
+
+const PORT_HEALTH = {
+  ok:       { dot: 'dot-ok',      cls: 'ok',   text: 'verbunden' },
+  degraded: { dot: 'dot-warn',    cls: 'warn', text: 'Lesefehler' },
+  idle:     { dot: 'dot-unknown', cls: 'muted', text: 'verbunden, noch keine Lesung' },
+  offline:  { dot: 'dot-off',     cls: 'err',  text: 'getrennt' },
+};
+
+function renderPorts(ports) {
+  const tbody = $('#porttable tbody');
+  tbody.innerHTML = '';
+  if (!ports || !ports.length) {
+    tbody.innerHTML = '<tr><td colspan="6" class="muted">Keine Ports konfiguriert</td></tr>';
+    return;
+  }
+  for (const p of ports) {
+    const h = PORT_HEALTH[p.health] || PORT_HEALTH.idle;
+    let label = h.text;
+    if (p.health === 'degraded') label += ' (' + p.error_devices + '/' + p.device_count + ')';
+    const tr = document.createElement('tr');
+    tr.innerHTML =
+      '<td>' + escapeHtml(p.alias) + '</td>' +
+      '<td class="muted">' + escapeHtml(p.path) + '</td>' +
+      '<td class="num">' + p.baud_rate + '</td>' +
+      '<td class="num">' + p.device_count + '</td>' +
+      '<td>' + fmtTime(p.last_read) + '</td>' +
+      '<td><span class="dot ' + h.dot + '"></span><span class="' + h.cls + '">' + label + '</span></td>';
     tbody.appendChild(tr);
   }
 }

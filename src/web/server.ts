@@ -282,8 +282,47 @@ export class WebServer {
     return {
       property: this.config.property,
       mqtt: { connected: this.mqtt.isConnected(), broker: this.config.mqtt.broker },
+      ports: this.portsPayload(),
       devices,
     };
+  }
+
+  // Per-USB-port status: is the serial port connected, plus a health signal
+  // aggregated from the readings of the devices on that port (recent errors /
+  // whether anything has been read at all).
+  private portsPayload() {
+    return this.config.ports.map(p => {
+      const connected = this.portManager.isConnected(p.alias);
+      const devices = this.config.devices.filter(d => d.port === p.alias);
+      let errorDevices = 0;
+      let readDevices = 0;
+      let lastRead: string | null = null;
+      for (const d of devices) {
+        const s = this.store.get(d.secondary_address);
+        if (s.read_errors > 0) errorDevices++;
+        if (s.last_read) {
+          readDevices++;
+          if (!lastRead || s.last_read > lastRead) lastRead = s.last_read;
+        }
+      }
+
+      let health: 'ok' | 'degraded' | 'offline' | 'idle';
+      if (!connected) health = 'offline';
+      else if (errorDevices > 0) health = 'degraded';
+      else if (readDevices === 0 && devices.length > 0) health = 'idle';
+      else health = 'ok';
+
+      return {
+        alias: p.alias,
+        path: p.path,
+        baud_rate: p.baud_rate,
+        connected,
+        health,
+        device_count: devices.length,
+        error_devices: errorDevices,
+        last_read: lastRead,
+      };
+    });
   }
 
   // Synchronous readout for external automation. Responds once the readout
