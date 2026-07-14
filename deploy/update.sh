@@ -67,12 +67,50 @@ if ! command -v make >/dev/null 2>&1; then
   BUILD_DEPS_INSTALLED=true
 fi
 
-# Stop service before updating
+# PIDs of the running daemon (the `node .../dist/index.js` process).
+mbus_pids() {
+  if command -v pgrep >/dev/null 2>&1; then
+    pgrep -f "$INSTALL_DIR/dist/index.js" 2>/dev/null
+  else
+    ps -o pid= -o args= 2>/dev/null | grep "$INSTALL_DIR/dist/index.js" | grep -v grep | awk '{print $1}'
+  fi
+}
+
+# Stop service before updating.
+# A wedged daemon can ignore SIGTERM (a hung read cycle stops the event loop
+# from ever running the graceful-shutdown handler). If we trust the service
+# manager's stop alone, that process survives and keeps running the OLD code
+# from memory even though we rewrite dist/ on disk — so the update silently
+# has no effect. Ask nicely, then verify it's really gone and SIGKILL a
+# survivor.
 echo "Stopping service..."
 if [ "$SVC_MGR" = "systemd" ]; then
   systemctl stop mbus2mqtt 2>/dev/null || true
 else
   rc-service mbus2mqtt stop 2>/dev/null || true
+fi
+
+i=0
+while [ "$i" -lt 10 ] && [ -n "$(mbus_pids)" ]; do
+  i=$((i + 1))
+  sleep 1
+done
+SURVIVORS=$(mbus_pids)
+if [ -n "$SURVIVORS" ]; then
+  echo -e "${RED}  Daemon ignored stop (wedged) — force-killing: $(echo $SURVIVORS)${NC}"
+  kill $SURVIVORS 2>/dev/null || true
+  sleep 2
+  STILL=$(mbus_pids)
+  if [ -n "$STILL" ]; then
+    kill -9 $STILL 2>/dev/null || true
+    sleep 1
+  fi
+fi
+
+# Clear any stale/"crashed" OpenRC state, otherwise the later `start` sees the
+# service as already-started and becomes a no-op.
+if [ "$SVC_MGR" = "openrc" ]; then
+  rc-service mbus2mqtt zap 2>/dev/null || true
 fi
 
 # Update source files (preserve config and state)
@@ -123,6 +161,12 @@ if [ "$SVC_MGR" = "systemd" ]; then
   systemctl start mbus2mqtt 2>/dev/null || true
 else
   rc-service mbus2mqtt start
+fi
+
+# Verify the daemon actually came up with the new build.
+sleep 3
+if [ -z "$(mbus_pids)" ]; then
+  echo -e "${RED}  WARNING: daemon not running after start — check logs${NC}"
 fi
 
 echo ""
