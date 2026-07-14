@@ -293,6 +293,12 @@ export class WebServer {
   private portsPayload() {
     return this.config.ports.map(p => {
       const connected = this.portManager.isConnected(p.alias);
+      // Live presence check: on Linux an unplugged USB-serial adapter makes its
+      // /dev node vanish immediately. Testing the path each poll is a cheap,
+      // real-time signal that the physical device is still there — node-mbus
+      // won't surface this on its own. Returns null for non-Unix paths (e.g.
+      // Windows COMx) where we can't tell.
+      const present = this.portPresent(p.path);
       const devices = this.config.devices.filter(d => d.port === p.alias);
       let errorDevices = 0;
       let readDevices = 0;
@@ -306,8 +312,9 @@ export class WebServer {
         }
       }
 
-      let health: 'ok' | 'degraded' | 'offline' | 'idle';
-      if (!connected) health = 'offline';
+      let health: 'ok' | 'degraded' | 'offline' | 'idle' | 'missing';
+      if (present === false) health = 'missing';   // USB node gone → unplugged
+      else if (!connected) health = 'offline';
       else if (errorDevices > 0) health = 'degraded';
       else if (readDevices === 0 && devices.length > 0) health = 'idle';
       else health = 'ok';
@@ -317,12 +324,24 @@ export class WebServer {
         path: p.path,
         baud_rate: p.baud_rate,
         connected,
+        present,
         health,
         device_count: devices.length,
         error_devices: errorDevices,
         last_read: lastRead,
       };
     });
+  }
+
+  // fs check for the serial device node. Only meaningful for Unix device paths;
+  // returns null (unknown) for anything else so we don't false-flag COM ports.
+  private portPresent(portPath: string): boolean | null {
+    if (!portPath.startsWith('/')) return null;
+    try {
+      return fs.existsSync(portPath);
+    } catch {
+      return null;
+    }
   }
 
   // Synchronous readout for external automation. Responds once the readout

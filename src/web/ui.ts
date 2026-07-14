@@ -176,6 +176,7 @@ const PORT_HEALTH = {
   degraded: { dot: 'dot-warn',    cls: 'warn', text: 'Lesefehler' },
   idle:     { dot: 'dot-unknown', cls: 'muted', text: 'verbunden, noch keine Lesung' },
   offline:  { dot: 'dot-off',     cls: 'err',  text: 'getrennt' },
+  missing:  { dot: 'dot-off',     cls: 'err',  text: 'USB nicht gefunden' },
 };
 
 function renderPorts(ports) {
