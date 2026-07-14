@@ -4,6 +4,7 @@ import * as path from 'path';
 import { spawn } from 'child_process';
 import { Config, ImmediateReadResult } from '../types';
 import { PortManager } from '../mbus/port-manager';
+import { MqttPublisher } from '../mqtt/client';
 import { ReadingsStore } from '../store/readings-store';
 import { Scheduler } from '../scheduler/scheduler';
 import { scanAllPorts, ScanResult } from '../mbus/scanner';
@@ -45,15 +46,17 @@ export class WebServer {
   private portManager: PortManager;
   private store: ReadingsStore;
   private scheduler: Scheduler;
+  private mqtt: MqttPublisher;
   private auth: AuthManager;
   private job: ScanJob = { status: 'idle', started_at: '', entries: [] };
   private readout: ReadoutJob = { status: 'idle', started_at: '', trigger: 'web', results: [] };
 
-  constructor(config: Config, portManager: PortManager, store: ReadingsStore, scheduler: Scheduler) {
+  constructor(config: Config, portManager: PortManager, store: ReadingsStore, scheduler: Scheduler, mqtt: MqttPublisher) {
     this.config = config;
     this.portManager = portManager;
     this.store = store;
     this.scheduler = scheduler;
+    this.mqtt = mqtt;
     this.auth = new AuthManager(config.web.password, config.web.auth_log);
   }
 
@@ -276,7 +279,11 @@ export class WebServer {
         errors: s.read_errors,
       };
     });
-    return { property: this.config.property, devices };
+    return {
+      property: this.config.property,
+      mqtt: { connected: this.mqtt.isConnected(), broker: this.config.mqtt.broker },
+      devices,
+    };
   }
 
   // Synchronous readout for external automation. Responds once the readout

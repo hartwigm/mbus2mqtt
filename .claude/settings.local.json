@@ -22,7 +22,8 @@
       "Bash(bash deploy/rpi/build-image.sh M47 2>&1)",
       "Bash(bash deploy/rpi/build-image.sh M47)",
       "Bash(grep -E \"\\\\.\\(ts|js\\)$\")",
-      "Bash(wc:*)"
+      "Bash(wc:*)",
+      "PowerShell(npm run *)"
     ]
   }
 }

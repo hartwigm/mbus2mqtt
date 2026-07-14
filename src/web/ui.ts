@@ -76,11 +76,16 @@ export const INDEX_HTML = `<!doctype html>
   @media (prefers-color-scheme: dark) { .status { background: #3a3620; color: #e0d28a; } }
   .spinner { display: inline-block; width: .8rem; height: .8rem; border: 2px solid currentColor; border-top-color: transparent; border-radius: 50%; animation: spin .7s linear infinite; vertical-align: -1px; margin-right: .3rem; }
   @keyframes spin { to { transform: rotate(360deg); } }
+  .dot { display: inline-block; width: .6rem; height: .6rem; border-radius: 50%; margin-right: .4rem; vertical-align: 0; }
+  .dot-ok      { background: #2a8a2a; }
+  .dot-off     { background: #c02020; }
+  .dot-unknown { background: #999; }
 </style>
 </head>
 <body>
   <h1>mbus2mqtt — <span id="prop">…</span></h1>
   <div class="sub" id="sub">Lade…</div>
+  <div class="sub" id="mqtt-status"><span class="dot dot-unknown"></span>MQTT: <span id="mqtt-text">…</span></div>
 
   <div class="bar">
     <button id="refresh">Aktualisieren</button>
@@ -135,6 +140,7 @@ async function loadDevices() {
   $('#prop').textContent = data.property;
   const count = data.devices.length;
   $('#sub').textContent = count + ' Gerät(e) konfiguriert';
+  renderMqttStatus(data.mqtt);
   const tbody = $('#devtable tbody');
   tbody.innerHTML = '';
   for (const d of data.devices) {
@@ -150,6 +156,23 @@ async function loadDevices() {
       '<td>' + fmtTime(d.last_read) + '</td>' +
       '<td>' + statusCell + '</td>';
     tbody.appendChild(tr);
+  }
+}
+
+function renderMqttStatus(m) {
+  const dot = $('#mqtt-status .dot');
+  const text = $('#mqtt-text');
+  if (!m) {
+    dot.className = 'dot dot-unknown';
+    text.textContent = 'unbekannt';
+    return;
+  }
+  if (m.connected) {
+    dot.className = 'dot dot-ok';
+    text.innerHTML = '<span class="ok">verbunden</span> (' + escapeHtml(m.broker) + ')';
+  } else {
+    dot.className = 'dot dot-off';
+    text.innerHTML = '<span class="err">getrennt</span> (' + escapeHtml(m.broker) + ')';
   }
 }
 
@@ -330,6 +353,11 @@ $('#update').addEventListener('click', async () => {
 
 // On load: show devices + any recent scan result
 loadDevices().catch(e => $('#sub').textContent = 'Fehler: ' + e.message);
+// Auto-refresh devices + MQTT status every 15s (skip while a job is running)
+setInterval(() => {
+  if ($('#scan').disabled || $('#readout').disabled) return;
+  loadDevices().catch(() => {});
+}, 15000);
 fetch('/api/scan').then(r => r.json()).then(s => {
   if (s.status === 'done' || s.status === 'running') renderScan(s);
 });

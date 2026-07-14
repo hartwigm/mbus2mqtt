@@ -15,7 +15,7 @@ export async function cmdRun(config: Config): Promise<void> {
   const store = new ReadingsStore(config.state_file);
   const scheduler = new Scheduler(config, portManager, mqttClient, store);
   const webServer = config.web.enabled
-    ? new WebServer(config, portManager, store, scheduler)
+    ? new WebServer(config, portManager, store, scheduler, mqttClient)
     : null;
 
   // Graceful shutdown
