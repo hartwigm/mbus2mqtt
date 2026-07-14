@@ -81,6 +81,8 @@ export const INDEX_HTML = `<!doctype html>
   .dot-warn    { background: #c07000; }
   .dot-off     { background: #c02020; }
   .dot-unknown { background: #999; }
+  .foot { margin-top: 2rem; padding-top: .75rem; border-top: 1px solid #ddd; color: #999; font-size: .78rem; text-align: center; }
+  @media (prefers-color-scheme: dark) { .foot { border-color: #333; } }
 </style>
 </head>
 <body>
@@ -140,6 +142,8 @@ export const INDEX_HTML = `<!doctype html>
     </table>
   </div>
 
+  <div class="foot" id="version">…</div>
+
 <script>
 const $ = (sel) => document.querySelector(sel);
 const fmtTime = (iso) => iso ? new Date(iso).toLocaleString('de-DE') : '—';
@@ -153,6 +157,7 @@ async function loadDevices() {
   $('#sub').textContent = count + ' Gerät(e) konfiguriert';
   renderMqttStatus(data.mqtt);
   renderPorts(data.ports);
+  if (data.version) $('#version').textContent = 'mbus2mqtt ' + data.version;
   const tbody = $('#devtable tbody');
   tbody.innerHTML = '';
   for (const d of data.devices) {

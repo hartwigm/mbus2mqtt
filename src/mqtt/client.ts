@@ -12,6 +12,12 @@ export class MqttPublisher {
   private client: mqtt.MqttClient | null = null;
   private config: MqttConfig;
   private options: Required<MqttPublisherOptions>;
+  private statusRevertTimer: ReturnType<typeof setTimeout> | null = null;
+
+  // For the first hour after a (re)start the status topic carries the service
+  // IP behind "online" (e.g. "online 192.168.133.42"), then settles to a plain
+  // "online". Lets you find the box via MQTT after a DHCP-driven restart.
+  private static readonly IP_WINDOW_MS = 60 * 60 * 1000;
 
   constructor(config: MqttConfig, options: MqttPublisherOptions = {}) {
     this.config = config;
@@ -72,7 +78,7 @@ export class MqttPublisher {
           connected = true;
           log.info(`MQTT connected to ${this.config.broker}`);
           if (this.options.publishStatus) {
-            this.publish('mbus2mqtt/status', 'online', true);
+            this.publishOnlineStatus();
           }
           settle(resolve);
         } else {
@@ -118,8 +124,28 @@ export class MqttPublisher {
     });
   }
 
+  // Publish "online <ip>" retained, then revert to a plain "online" after the
+  // first hour. Downstream availability checks must look at the first token
+  // only — HA discovery uses an availability_template for exactly that.
+  private publishOnlineStatus(): void {
+    const ip = this.getLocalIp();
+    this.publish('mbus2mqtt/status', `online ${ip}`, true);
+    if (this.statusRevertTimer) clearTimeout(this.statusRevertTimer);
+    this.statusRevertTimer = setTimeout(() => {
+      this.statusRevertTimer = null;
+      if (this.client?.connected) {
+        this.publish('mbus2mqtt/status', 'online', true);
+      }
+    }, MqttPublisher.IP_WINDOW_MS);
+    this.statusRevertTimer.unref();
+  }
+
   async disconnect(): Promise<void> {
     if (!this.client) return;
+    if (this.statusRevertTimer) {
+      clearTimeout(this.statusRevertTimer);
+      this.statusRevertTimer = null;
+    }
     if (this.client.connected && this.options.publishStatus) {
       await this.publish('mbus2mqtt/status', 'offline', true);
     }

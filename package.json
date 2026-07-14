@@ -1,6 +1,6 @@
 {
   "name": "mbus2mqtt",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "M-Bus meter reader with MQTT publishing for Home Assistant and house.ai",
   "main": "dist/index.js",
   "bin": {

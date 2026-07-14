@@ -124,6 +124,9 @@ export function buildSubDiscoveries(property: string, device: DeviceConfig): Dis
       state_topic: stateTopic,
       value_template: `{{ value_json.attributes.${sub.key} | default(None) }}`,
       availability_topic: 'mbus2mqtt/status',
+      // Status may be "online 192.168.x" in the first hour after a restart —
+      // match on the first token so availability stays correct.
+      availability_template: "{{ value.split(' ')[0] }}",
       device: deviceBlock,
     };
     if (sub.unit) payload.unit_of_measurement = sub.unit;

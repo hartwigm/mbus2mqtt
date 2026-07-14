@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { Command } from 'commander';
+import { VERSION } from './version';
 import { loadConfig } from './config';
 import { initLogger } from './util/logger';
 import { cmdScan } from './commands/scan';
@@ -17,7 +18,7 @@ const program = new Command();
 program
   .name('mbus2mqtt')
   .description('M-Bus meter reader with MQTT publishing')
-  .version('1.0.0')
+  .version(VERSION)
   .option('-c, --config <path>', 'path to config file');
 
 program

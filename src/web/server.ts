@@ -9,6 +9,7 @@ import { ReadingsStore } from '../store/readings-store';
 import { Scheduler } from '../scheduler/scheduler';
 import { scanAllPorts, ScanResult } from '../mbus/scanner';
 import { getLogger } from '../util/logger';
+import { versionLabel } from '../version';
 import { INDEX_HTML, loginHtml } from './ui';
 import { AuthManager } from './auth';
 
@@ -305,6 +306,7 @@ export class WebServer {
     });
     return {
       property: this.config.property,
+      version: versionLabel(),
       mqtt: { connected: this.mqtt.isConnected(), broker: this.config.mqtt.broker },
       ports: this.portsPayload(),
       devices,
