@@ -1,7 +1,7 @@
 import * as http from 'http';
 import * as fs from 'fs';
 import * as path from 'path';
-import { spawn } from 'child_process';
+import { spawn, ChildProcess } from 'child_process';
 import { Config, ImmediateReadResult } from '../types';
 import { PortManager } from '../mbus/port-manager';
 import { MqttPublisher } from '../mqtt/client';
@@ -231,15 +231,39 @@ export class WebServer {
       log.error(`update.sh not found at ${script}`);
       return;
     }
-    log.info(`Web UI: update requested — running ${script}`);
-    // Detach fully: update.sh stops our service, rebuilds, and starts it again.
-    // We must not be a child of this process once systemctl stop fires.
-    const child = spawn('sh', [script], {
-      detached: true,
-      stdio: 'ignore',
-      cwd: path.dirname(script),
-    });
+    const logFile = '/tmp/mbus2mqtt-update.log';
+    // update.sh stops our service, rebuilds and starts it again — so it MUST
+    // outlive our own process. `detached` alone is not enough under systemd:
+    // the default KillMode=control-group means `systemctl stop mbus2mqtt`
+    // tears down our whole cgroup, and a mere child (even detached) dies with
+    // it. Run the script in its own transient unit via systemd-run so it lives
+    // in a separate cgroup and survives the stop. Logs go to `journalctl -u
+    // mbus2mqtt-update` and are also teed to the log file for OpenRC parity.
+    let child: ChildProcess;
+    if (fs.existsSync('/run/systemd/system') && this.hasSystemdRun()) {
+      log.info(`Web UI: update requested — via systemd-run, log → journalctl -u mbus2mqtt-update`);
+      child = spawn(
+        'systemd-run',
+        ['--unit=mbus2mqtt-update', '--collect', '--quiet',
+         'sh', '-c', `exec sh '${script}' > '${logFile}' 2>&1`],
+        { detached: true, stdio: 'ignore' },
+      );
+    } else {
+      // OpenRC (Alpine): rc-service stop does not cgroup-kill, so a fully
+      // detached child survives. Tee output to the log file for diagnosis.
+      log.info(`Web UI: update requested — running ${script}, log → ${logFile}`);
+      child = spawn('sh', ['-c', `exec sh '${script}' > '${logFile}' 2>&1`], {
+        detached: true,
+        stdio: 'ignore',
+        cwd: path.dirname(script),
+      });
+    }
     child.unref();
+  }
+
+  private hasSystemdRun(): boolean {
+    return ['/usr/bin/systemd-run', '/bin/systemd-run', '/usr/sbin/systemd-run']
+      .some(p => fs.existsSync(p));
   }
 
   private async handleLogin(req: http.IncomingMessage, res: http.ServerResponse, ip: string): Promise<void> {
