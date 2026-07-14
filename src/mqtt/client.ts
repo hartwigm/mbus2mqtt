@@ -19,6 +19,14 @@ export class MqttPublisher {
   // "online". Lets you find the box via MQTT after a DHCP-driven restart.
   private static readonly IP_WINDOW_MS = 60 * 60 * 1000;
 
+  // Upper bound for a single QoS-1 publish. A publish resolves only when the
+  // broker returns PUBACK; if the route/broker drops *after* the socket still
+  // reports `connected` (e.g. EHOSTUNREACH), that ACK never arrives and the
+  // callback never fires. The scheduler awaits publish() while holding a
+  // single-flight read lock, so an unbounded publish would wedge the whole read
+  // loop indefinitely. Time it out to turn a hang into a recoverable error.
+  private static readonly PUBLISH_TIMEOUT_MS = 15000;
+
   constructor(config: MqttConfig, options: MqttPublisherOptions = {}) {
     this.config = config;
     this.options = {
@@ -117,10 +125,19 @@ export class MqttPublisher {
     const msg = typeof payload === 'string' ? payload : JSON.stringify(payload);
 
     return new Promise((resolve, reject) => {
-      this.client!.publish(topic, msg, { qos: 1, retain }, (err) => {
+      let settled = false;
+      const finish = (err?: Error) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
         if (err) reject(err);
         else resolve();
-      });
+      };
+      const timer = setTimeout(
+        () => finish(new Error(`MQTT publish timeout after ${MqttPublisher.PUBLISH_TIMEOUT_MS}ms to ${topic}`)),
+        MqttPublisher.PUBLISH_TIMEOUT_MS,
+      );
+      this.client!.publish(topic, msg, { qos: 1, retain }, (err) => finish(err ?? undefined));
     });
   }
 

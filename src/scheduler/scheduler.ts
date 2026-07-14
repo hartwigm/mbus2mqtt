@@ -9,6 +9,14 @@ import { getLogger } from '../util/logger';
 
 const TICK_MS = 60 * 1000; // check every minute
 
+// Hard ceiling on how long the single-flight read lock may stay held. A normal
+// cycle is bounded (getData times out at 30s/device, scanSecondary at 600s), so
+// a lock older than this means a tick hung on some await and would otherwise
+// disable the scheduler forever (this exact wedge took BT6 offline for ~21h on
+// 2026-07-13 when a QoS-1 publish never got its PUBACK). Force-release so the
+// loop self-heals.
+const READ_LOCK_MAX_AGE_MS = 30 * 60 * 1000;
+
 export class Scheduler {
   private config: Config;
   private portManager: PortManager;
@@ -17,6 +25,7 @@ export class Scheduler {
   private timer: NodeJS.Timeout | null = null;
   private running = false;
   private reading = false;
+  private readingSince = 0;
   private firstTick = true;
 
   constructor(config: Config, portManager: PortManager, mqttClient: MqttPublisher, store: ReadingsStore) {
@@ -58,13 +67,22 @@ export class Scheduler {
   }
 
   async tick(): Promise<void> {
-    if (this.reading) return; // skip if previous cycle still running
     const log = getLogger();
+
+    if (this.reading) {
+      // Previous cycle still running — normally we skip. But if the lock has
+      // been held past the ceiling, a prior tick hung on an await; reclaim it
+      // so the scheduler can't stay wedged indefinitely.
+      const heldMs = Date.now() - this.readingSince;
+      if (heldMs < READ_LOCK_MAX_AGE_MS) return;
+      log.error(`Read lock stuck for ${Math.round(heldMs / 1000)}s — force-releasing and retrying`);
+    }
 
     const due = this.getDevicesDue();
     if (due.length === 0) return;
 
     this.reading = true;
+    this.readingSince = Date.now();
     try {
       log.info(`Reading ${due.length} device(s)...`);
       const readings = await this.portManager.readDevices(due);
@@ -151,6 +169,7 @@ export class Scheduler {
     if (this.reading) throw new Error('Lesung läuft bereits — bitte erneut versuchen');
 
     this.reading = true;
+    this.readingSince = Date.now();
     try {
       const devices = this.config.devices;
       log.info(`Sofort-Lesung: ${devices.length} Gerät(e)...`);
