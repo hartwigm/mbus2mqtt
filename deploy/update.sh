@@ -31,6 +31,31 @@ else
   SVC_MGR="openrc"
 fi
 
+# Single-writer lock. Two updates running at once (e.g. the CLI and the web-UI
+# "Update" button) both stop the service and rebuild in $INSTALL_DIR at the same
+# time; one deletes src/ mid-`tsc` for the other, leaving a half-built dist/ and
+# a stopped service. Serialize with an atomic mkdir lock. A crashed holder would
+# leave a stale lock, so we take it over once its pid is gone (/run is tmpfs, so
+# it also clears on reboot).
+LOCKDIR="/run/mbus2mqtt-update.lock"
+if mkdir "$LOCKDIR" 2>/dev/null; then
+  echo $$ > "$LOCKDIR/pid"
+else
+  OLDPID=$(cat "$LOCKDIR/pid" 2>/dev/null || true)
+  if [ -n "$OLDPID" ] && kill -0 "$OLDPID" 2>/dev/null; then
+    echo -e "${RED}Another mbus2mqtt update is already running (pid $OLDPID) — aborting.${NC}" >&2
+    exit 1
+  fi
+  echo "  Taking over stale update lock (pid ${OLDPID:-?} gone)"
+  rm -rf "$LOCKDIR"
+  if ! mkdir "$LOCKDIR" 2>/dev/null; then
+    echo -e "${RED}Could not acquire update lock at $LOCKDIR — aborting.${NC}" >&2
+    exit 1
+  fi
+  echo $$ > "$LOCKDIR/pid"
+fi
+trap 'rm -rf "$LOCKDIR"' EXIT
+
 echo -e "${GREEN}=== mbus2mqtt update ===${NC}"
 
 # Check current version
@@ -43,7 +68,7 @@ fi
 # Download latest source
 echo "Downloading latest from $BRANCH..."
 TMP_DIR=$(mktemp -d)
-trap 'rm -rf "$TMP_DIR"' EXIT
+trap 'rm -rf "$TMP_DIR" "$LOCKDIR"' EXIT
 
 wget -qO "$TMP_DIR/source.tar.gz" "$TARBALL_URL"
 tar -xzf "$TMP_DIR/source.tar.gz" -C "$TMP_DIR"
