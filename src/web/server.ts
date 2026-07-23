@@ -142,6 +142,20 @@ export class WebServer {
       return;
     }
 
+    // Unauthenticated health probe for external monitoring (Uptime Kuma etc.).
+    // Returns 200 only when the service is truly functional: process up AND MQTT
+    // connected AND every serial port present/connected. A crash-loop never gets
+    // this far (the web server only starts after MQTT connects), so the port is
+    // simply refused; an MQTT drop or unplugged adapter yields 503. Either way a
+    // monitor accepting only HTTP 200 flips to DOWN — unlike a plain ping, which
+    // stayed UP while the daemon was crashed. No auth: same VPN-only rationale as
+    // the readout trigger above, and it exposes no secrets.
+    if (method === 'GET' && (pathname === '/health' || pathname === '/healthz')) {
+      const health = this.healthPayload();
+      this.json(res, health.status === 'ok' ? 200 : 503, health);
+      return;
+    }
+
     // All other routes require auth
     if (!this.auth.isAuthenticated(req)) {
       if (pathname.startsWith('/api/')) {
@@ -288,6 +302,31 @@ export class WebServer {
   private json(res: http.ServerResponse, status: number, body: unknown): void {
     res.writeHead(status, { 'content-type': 'application/json; charset=utf-8' });
     res.end(JSON.stringify(body));
+  }
+
+  // Overall service health for the /health probe. A serial port counts as a
+  // hard failure only when the adapter is gone ('present === false') or the link
+  // is down ('!connected'); per-meter read errors ('degraded'/'idle') still
+  // leave the service 'ok' since it is running and publishing.
+  private healthPayload() {
+    const ports = this.portsPayload();
+    const mqttConnected = this.mqtt.isConnected();
+    const portsOk = ports.every(p => p.connected && p.present !== false);
+    const status: 'ok' | 'degraded' = mqttConnected && portsOk ? 'ok' : 'degraded';
+    return {
+      status,
+      property: this.config.property,
+      version: versionLabel(),
+      mqtt: mqttConnected,
+      broker: this.config.mqtt.broker,
+      uptime_s: Math.round(process.uptime()),
+      ports: ports.map(p => ({
+        alias: p.alias,
+        connected: p.connected,
+        present: p.present,
+        health: p.health,
+      })),
+    };
   }
 
   private devicesPayload() {
