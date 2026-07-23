@@ -93,11 +93,15 @@ if ! command -v make >/dev/null 2>&1; then
 fi
 
 # PIDs of the running daemon (the `node .../dist/index.js` process).
+# MUST always exit 0: pgrep returns 1 when there is no match, and with `set -e`
+# active a bare `SURVIVORS=$(mbus_pids)` would then abort the whole script right
+# after a *clean* stop (no survivor) — silently killing the update before the
+# rebuild. That is the exact failure that left the service stopped and un-updated.
 mbus_pids() {
   if command -v pgrep >/dev/null 2>&1; then
-    pgrep -f "$INSTALL_DIR/dist/index.js" 2>/dev/null
+    pgrep -f "$INSTALL_DIR/dist/index.js" 2>/dev/null || true
   else
-    ps -o pid= -o args= 2>/dev/null | grep "$INSTALL_DIR/dist/index.js" | grep -v grep | awk '{print $1}'
+    ps -o pid= -o args= 2>/dev/null | grep "$INSTALL_DIR/dist/index.js" | grep -v grep | awk '{print $1}' || true
   fi
 }
 
