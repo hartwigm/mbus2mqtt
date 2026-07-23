@@ -127,6 +127,23 @@ echo "Starting container..."
 pct start "$CTID"
 sleep 5
 
+# Make the container send its unique hostname as DHCP option 12.
+# Alpine's busybox udhcpc only sends the hostname when the dhcp iface carries a
+# `hostname` property (see /usr/libexec/ifupdown-ng/dhcp). Without it every
+# mbus2mqtt box registers under the generic name and multiple installs collide
+# in the DHCP/DNS server. Idempotent; then renew the lease with the real name.
+echo "Configuring DHCP hostname..."
+pct exec "$CTID" -- sh -c '
+  HN=$(cat /etc/hostname)
+  if grep -q "iface eth0 inet dhcp" /etc/network/interfaces \
+     && ! grep -qE "^[[:space:]]*hostname " /etc/network/interfaces; then
+    awk -v hn="$HN" "{print} /iface eth0 inet dhcp/{print \"    hostname \" hn}" \
+      /etc/network/interfaces > /etc/network/interfaces.new
+    mv /etc/network/interfaces.new /etc/network/interfaces
+    /etc/init.d/networking restart >/dev/null 2>&1 || true
+  fi
+'
+
 # Everything below runs INSIDE the container — host stays clean
 echo "Setting up inside container..."
 pct exec "$CTID" -- sh -c '

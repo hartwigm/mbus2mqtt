@@ -160,6 +160,14 @@ if ! grep -q "$NEW_HOST" /etc/hosts 2>/dev/null; then
     || echo "127.0.1.1	$NEW_HOST" >> /etc/hosts
 fi
 
+# Re-register in DHCP under the new name. dhcpcd sends /etc/hostname as DHCP
+# option 12, but the first lease at boot went out with the image's name — force
+# a renew so multiple installs don't all show up as the generic "mbus2mqtt".
+dhcpcd -n 2>/dev/null \
+  || systemctl restart dhcpcd 2>/dev/null \
+  || systemctl restart NetworkManager 2>/dev/null \
+  || true
+
 # Timezone
 timedatectl set-timezone Europe/Berlin 2>/dev/null || true
 
